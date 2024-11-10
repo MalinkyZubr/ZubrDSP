@@ -1,4 +1,5 @@
 mod foo;
+mod Pipeline;
 use crate::foo::{MyStruct, Another};
 
 fn main() {
