@@ -1,8 +1,8 @@
 use std::sync::mpsc::{Receiver};
 use num::complex::Complex;
 use crate::Pipeline::node::messages::{ReceiverWrapper, SenderWrapper, Source, Sink};
-use crate::Pipeline::node::prototype::PipelineNodeGeneric
-pub trait BufferType {}
+use crate::Pipeline::node::prototype::PipelineNodeGeneric;
+pub trait BufferType: Send {}
 
 impl BufferType for Complex<f32> {}
 impl BufferType for Vec<Complex<f32>> {} // make the size runtime based

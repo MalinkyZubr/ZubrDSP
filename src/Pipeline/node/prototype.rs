@@ -1,29 +1,38 @@
 use num::complex::Complex;
+use std::sync::{Arc, Mutex};
 
 use crate::Pipeline::{buffer::BufferType};
 use super::messages::{Source, Sink};
 
 
-pub trait PipelineStep<DataType: BufferType> { // This is the bit that is not abstracted away. Passed to pipeline
-    fn computation(&mut self, data: DataType) -> DataType;
-}
+pub type PipelineStep<T> = dyn Fn(T) -> T + Send + 'static;
 
 pub struct PipelineNode<DataType: BufferType> {
-    step: Box<dyn PipelineStep<DataType>>, // could lead to inefficiencies? switch to enum later perhaps
-    input: Box<dyn Source<DataType>>,
-    output: Box<dyn Sink<DataType>>
+    step: Box<PipelineStep<DataType>>,
+    input: Option<Box<dyn Source<DataType>>>,
+    output: Option<Box<dyn Sink<DataType>>>
+}
+
+impl<DataType: BufferType> PipelineNode <DataType> {
+    pub fn new(step: Box<PipelineStep<DataType>>) -> PipelineNode<DataType> {
+        PipelineNode {
+            step,
+            input: None,
+            output: None
+        }
+    }
 }
 
 pub trait PipelineNodeGeneric {
-    fn call(&mut self);
+    fn call(&mut self); // have this pass errors
 }
 
 impl<DataType: BufferType> PipelineNodeGeneric for PipelineNode<DataType> {
     fn call(&mut self) {
-        let input_data: DataType = self.input.recv().unwrap();
-        let output_data: DataType = self.step.computation(input_data);
+        let input_data: DataType = self.input.as_mut().unwrap().recv().unwrap();
+        let output_data: DataType = (self.step)(input_data);
 
-        match self.output.send(output_data) {
+        match self.output.as_mut().unwrap().send(output_data) {
             Ok(()) => {}
             Err(_msg) => {}
         }
@@ -32,24 +41,11 @@ impl<DataType: BufferType> PipelineNodeGeneric for PipelineNode<DataType> {
 
 impl<DataType: BufferType> PipelineNode<DataType> {
     pub fn set_input(&mut self, input: Box<dyn Source<DataType>>) {
-        self.input = input;
+        self.input = Some(input);
     }
 
     pub fn set_output(&mut self, output: Box<dyn Sink<DataType>>) {
-        self.output = output;
+        self.output = Some(output);
     }
 }
 
-pub enum PipelineNodeEnum {
-    Scalar(PipelineNode<Complex<f32>>),
-    Vector(PipelineNode<Vec<Complex<f32>>>)
-}
-
-impl PipelineNodeEnum {
-    pub fn get_generalized(&mut self) -> &mut dyn PipelineNodeGeneric {
-        match self {
-            PipelineNodeEnum::Scalar(node) => node,
-            PipelineNodeEnum::Vector(node) => node
-        }
-    }
-}

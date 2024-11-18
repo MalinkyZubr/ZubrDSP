@@ -3,11 +3,11 @@ use std::sync::mpsc::{self, Receiver};
 use crate::Pipeline::buffer::BufferType;
 
 
-pub trait Source<DataType: BufferType> {
+pub trait Source<DataType: BufferType>: Send {
     fn recv(&mut self) -> Result<DataType, mpsc::RecvError>;
 }
 
-pub trait Sink<DataType: BufferType> {
+pub trait Sink<DataType: BufferType>: Send{
     fn send(&mut self, to_send: DataType) -> Result<(), mpsc::SendError<DataType>>;
 }
 
