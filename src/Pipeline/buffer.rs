@@ -2,35 +2,28 @@ use std::sync::mpsc::{Receiver};
 use num::complex::Complex;
 use crate::Pipeline::node::messages::{ReceiverWrapper, SenderWrapper, Source, Sink};
 use crate::Pipeline::node::prototype::PipelineNodeGeneric;
-pub trait BufferType: Send {}
-
-impl BufferType for Complex<f32> {}
-impl BufferType for Vec<Complex<f32>> {} // make the size runtime based
 
 
-// Each step is responsible for preparing its data for the next
-
-
-pub struct ScalarToVectorAdapter {
-    in_receiver: ReceiverWrapper<Complex<f32>>,
-    out_sender: SenderWrapper<Vec<Complex<f32>>>,
-    copy_buffer: Vec<Complex<f32>>,
+pub struct ScalarToVectorAdapter<T> {
+    in_receiver: ReceiverWrapper<T>,
+    out_sender: SenderWrapper<Vec<T>>,
+    copy_buffer: Vec<T>,
     // active_buffer: Vec<Complex<f32>>,
     buff_size: usize,
     counter: usize,
 }
 
 
-pub struct VectorToScalarAdapter {
-    in_receiver: ReceiverWrapper<Vec<Complex<f32>>>,
-    out_sender: SenderWrapper<Complex<f32>>,
+pub struct VectorToScalarAdapter<T> {
+    in_receiver: ReceiverWrapper<Vec<T>>,
+    out_sender: SenderWrapper<T>,
     buff_size: usize,
 }
 
 
-impl PipelineNodeGeneric for ScalarToVectorAdapter {
+impl<T> PipelineNodeGeneric for ScalarToVectorAdapter<T> {
     fn call(&mut self) {
-        let in_data: Complex<f32> = self.in_receiver.recv().unwrap();
+        let in_data: T = self.in_receiver.recv().unwrap();
         self.copy_buffer[self.counter] = in_data; // dereference for copy
         
         if self.counter == self.buff_size - 1 {
@@ -49,10 +42,10 @@ impl PipelineNodeGeneric for ScalarToVectorAdapter {
 }
 
 
-impl ScalarToVectorAdapter {
-    pub fn new(in_receiver: ReceiverWrapper<Complex<f32>>, out_sender: SenderWrapper<Vec<Complex<f32>>>,
+impl<T> ScalarToVectorAdapter<T> {
+    pub fn new(in_receiver: ReceiverWrapper<T>, out_sender: SenderWrapper<Vec<T>>,
         // active_buffer: Vec<Complex<f32>>,
-        buff_size: usize) -> ScalarToVectorAdapter {
+        buff_size: usize) -> ScalarToVectorAdapter<T> {
             ScalarToVectorAdapter {
                 in_receiver: in_receiver,
                 out_sender: out_sender,
@@ -64,9 +57,9 @@ impl ScalarToVectorAdapter {
 }
 
 
-impl PipelineNodeGeneric for VectorToScalarAdapter {
+impl<T> PipelineNodeGeneric for VectorToScalarAdapter<T> {
     fn call(&mut self) {        
-        let in_data: Vec<Complex<f32>> = self.in_receiver.recv().unwrap();
+        let in_data: Vec<T> = self.in_receiver.recv().unwrap();
         let mut index: usize = 0;
 
         while index < self.buff_size {   
@@ -81,8 +74,8 @@ impl PipelineNodeGeneric for VectorToScalarAdapter {
 }
 
 
-impl VectorToScalarAdapter {
-    pub fn new(in_receiver: ReceiverWrapper<Vec<Complex<f32>>>, out_sender: SenderWrapper<Complex<f32>>, buff_size: usize) -> VectorToScalarAdapter {
+impl<T> VectorToScalarAdapter<T> {
+    pub fn new(in_receiver: ReceiverWrapper<Vec<T>>, out_sender: SenderWrapper<T>, buff_size: usize) -> VectorToScalarAdapter<T> {
         VectorToScalarAdapter {
             in_receiver: in_receiver,
             out_sender: out_sender,
