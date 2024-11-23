@@ -1,7 +1,5 @@
-use std::sync::mpsc::{Receiver};
-use num::complex::Complex;
-use crate::Pipeline::node::messages::{ReceiverWrapper, SenderWrapper, Source, Sink};
-use crate::Pipeline::node::prototype::PipelineNodeGeneric;
+use super::messages::{ReceiverWrapper, SenderWrapper, Source, Sink};
+use super::prototype::PipelineNodeGeneric;
 
 
 pub struct ScalarToVectorAdapter<T> {
@@ -21,7 +19,7 @@ pub struct VectorToScalarAdapter<T> {
 }
 
 
-impl<T> PipelineNodeGeneric for ScalarToVectorAdapter<T> {
+impl<T: Send + Clone> PipelineNodeGeneric for ScalarToVectorAdapter<T> {
     fn call(&mut self) {
         let in_data: T = self.in_receiver.recv().unwrap();
         self.copy_buffer[self.counter] = in_data; // dereference for copy
@@ -57,7 +55,7 @@ impl<T> ScalarToVectorAdapter<T> {
 }
 
 
-impl<T> PipelineNodeGeneric for VectorToScalarAdapter<T> {
+impl<T: Send> PipelineNodeGeneric for VectorToScalarAdapter<T> {
     fn call(&mut self) {        
         let in_data: Vec<T> = self.in_receiver.recv().unwrap();
         let mut index: usize = 0;

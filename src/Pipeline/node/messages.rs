@@ -17,13 +17,13 @@ pub struct SenderWrapper<T> {
     sender: mpsc::Sender<T>
 }
 
-impl<T> Source<T> for ReceiverWrapper<T> {
+impl<T: Send> Source<T> for ReceiverWrapper<T> {
     fn recv(&mut self) -> Result<T, mpsc::RecvError> {
         return self.receiver.recv();
     }
 }
 
-impl<T>  Sink<T> for SenderWrapper<T> {
+impl<T: Send>  Sink<T> for SenderWrapper<T> {
     fn send(&mut self, to_send: T) -> Result<(), mpsc::SendError<T>> {
         return self.sender.send(to_send);
     }
