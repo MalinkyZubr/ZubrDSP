@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
+use num::Complex;
 use std::thread;
 use crate::Pipeline::node::prototype::{PipelineNode, PipelineStep};
 use super::welder::Welder;
 use super::node_enum::PipelineNodeEnum;
-use super::pipeline_thread::{PipelineThread, PipelineThreadState};
+use super::pipeline_thread::{PipelineThread, PipelineThreadFriend, PipelineThreadState, create_thread_and_tap};
 
 
 
@@ -11,8 +12,8 @@ pub struct Pipeline<T: Clone + Send> {
     buff_size: usize,
     thread_pool: Vec<thread::JoinHandle<()>>,
     node_pool: VecDeque<PipelineNodeEnum<T>>,
-    welder: Welder
-
+    welder: Welder,
+    thread_friends: Vec<PipelineThreadFriend>
 }
 
 impl<T: Clone + Send> Pipeline<T> {
@@ -22,7 +23,8 @@ impl<T: Clone + Send> Pipeline<T> {
             buff_size,
             thread_pool: Vec::new(),
             node_pool,
-            welder: Welder {buff_size}
+            welder: Welder {buff_size},
+            thread_friends: Vec::new(),
         }
     }
     pub fn add_scalar_step(&mut self, step: Box<PipelineStep<T>>) {//node: PipelineNode<T>) {
@@ -40,7 +42,9 @@ impl<T: Clone + Send> Pipeline<T> {
 
         while secondary.len() > 0 {
             let node: PipelineNodeEnum<T> = secondary.pop_front().unwrap();
-            thread_containers.push_back(PipelineThread::new(node));
+            let (thread, friend) = create_thread_and_tap(node);
+            thread_containers.push_back(thread);
+            self.thread_friends.push(friend);
         };
 
         return thread_containers;
@@ -66,7 +70,9 @@ impl<T: Clone + Send> Pipeline<T> {
             match adapter {
                 None => {},
                 Some(adpt) => {
-                    thread_containers.push_back(PipelineThread::new(adpt))
+                    let (thread, friend) = create_thread_and_tap(adpt);
+                    thread_containers.push_back(thread);
+                    self.thread_friends.push(friend);
                 }
             }
 
@@ -106,3 +112,7 @@ impl<T: Clone + Send> Pipeline<T> {
 
     pub fn end(&mut self) {}
 }
+
+
+pub type DSPPipeline = Pipeline<Complex<f32>>;
+pub type BytePipeline = Pipeline<u8>;

@@ -1,5 +1,6 @@
 use super::messages::{ReceiverWrapper, SenderWrapper, Source, Sink};
 use super::prototype::PipelineNodeGeneric;
+use std::collections::VecDeque;
 
 
 pub struct ScalarToVectorAdapter<T> {
@@ -57,16 +58,13 @@ impl<T> ScalarToVectorAdapter<T> {
 
 impl<T: Send> PipelineNodeGeneric for VectorToScalarAdapter<T> {
     fn call(&mut self) {        
-        let in_data: Vec<T> = self.in_receiver.recv().unwrap();
-        let mut index: usize = 0;
+        let mut in_data: VecDeque<T> = VecDeque::from(self.in_receiver.recv().unwrap());
 
-        while index < self.buff_size {   
-            match self.out_sender.send(in_data[index]) {
+        while in_data.len() > 0 {   
+            match self.out_sender.send(in_data.pop_front().unwrap()) {
                 Ok(()) => {}
                 Err(msg) => {}
             }
-
-            index += 1;
         }
     }
 }

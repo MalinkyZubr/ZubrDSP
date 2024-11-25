@@ -13,7 +13,7 @@ impl Welder {
         Welder {
             buff_size
         }
-    }
+    } // DANGER: Implications of static is that it lives as long as the program in HEAP! May need explicit drop to prevent runtime leaks!
     pub fn weld<T: Clone + Send>(&self, src: &mut PipelineNodeEnum<T>, dst: &mut PipelineNodeEnum<T>) -> Option<PipelineNodeEnum<T>> {
         match (src, dst) {
             (PipelineNodeEnum::Scalar(src), 
