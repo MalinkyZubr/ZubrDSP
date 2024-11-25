@@ -1,29 +1,29 @@
 use std::sync::mpsc;
 
 
-pub trait Source<T>: Send {
+pub trait Source<T: 'static>: Send {
     fn recv(&mut self) -> Result<T, mpsc::RecvError>;
 }
 
-pub trait Sink<T>: Send{
+pub trait Sink<T: 'static>: Send {
     fn send(&mut self, to_send: T) -> Result<(), mpsc::SendError<T>>;
 }
 
-pub struct ReceiverWrapper<T> {
+pub struct ReceiverWrapper<T: 'static> {
     receiver: mpsc::Receiver<T>
 }
 
-pub struct SenderWrapper<T> {
+pub struct SenderWrapper<T: 'static> {
     sender: mpsc::Sender<T>
 }
 
-impl<T: Send> Source<T> for ReceiverWrapper<T> {
+impl<T: Send + 'static> Source<T> for ReceiverWrapper<T> {
     fn recv(&mut self) -> Result<T, mpsc::RecvError> {
         return self.receiver.recv();
     }
 }
 
-impl<T: Send>  Sink<T> for SenderWrapper<T> {
+impl<T: Send + 'static>  Sink<T> for SenderWrapper<T> {
     fn send(&mut self, to_send: T) -> Result<(), mpsc::SendError<T>> {
         return self.sender.send(to_send);
     }

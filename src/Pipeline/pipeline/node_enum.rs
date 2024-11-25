@@ -2,14 +2,14 @@ use crate::Pipeline::node::buffer::{ScalarToVectorAdapter, VectorToScalarAdapter
 use crate::Pipeline::node::prototype::{PipelineNode, PipelineNodeGeneric};
 
 
-pub enum PipelineNodeEnum<T> {
+pub enum PipelineNodeEnum<T: Send + Clone + 'static> {
     Scalar(PipelineNode<T>),
     Vector(PipelineNode<Vec<T>>),
     ScalarVectorAdapter(ScalarToVectorAdapter<T>),
     VectorScalarAdapter(VectorToScalarAdapter<T>)
 }
 
-impl<T: Send + Clone> PipelineNodeEnum<T> {
+impl<T: Send + Clone + 'static> PipelineNodeEnum<T> {
     // pub fn get_generalized(self) -> Arc<Mutex<dyn PipelineNodeGeneric + Send>> {
     //     match self {
     //         PipelineNodeEnum::Scalar(node) => Arc::new(Mutex::new(node)),

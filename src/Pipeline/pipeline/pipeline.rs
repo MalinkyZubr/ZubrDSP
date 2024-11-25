@@ -4,11 +4,13 @@ use std::thread;
 use crate::Pipeline::node::prototype::{PipelineNode, PipelineStep};
 use super::welder::Welder;
 use super::node_enum::PipelineNodeEnum;
-use super::pipeline_thread::{PipelineThread, PipelineThreadFriend, PipelineThreadState, create_thread_and_tap};
+use super::thread::pipeline_thread::{PipelineThread, create_thread_and_tap};
+use super::thread::thread_diagnostics::PipelineThreadState;
+use super::thread::thread_friend::PipelineThreadFriend;
 
 
 
-pub struct Pipeline<T: Clone + Send> {
+pub struct Pipeline<T: Clone + Send + 'static> {
     buff_size: usize,
     thread_pool: Vec<thread::JoinHandle<()>>,
     node_pool: VecDeque<PipelineNodeEnum<T>>,
@@ -16,7 +18,7 @@ pub struct Pipeline<T: Clone + Send> {
     thread_friends: Vec<PipelineThreadFriend>
 }
 
-impl<T: Clone + Send> Pipeline<T> {
+impl<T: Clone + Send + 'static> Pipeline<T> {
     pub fn new(buff_size: usize, source: PipelineNode<Vec<T>>, sink: PipelineNode<Vec<T>>) -> Pipeline<T> {
         let node_pool: VecDeque<PipelineNodeEnum<T>> = VecDeque::from([PipelineNodeEnum::Vector(source), PipelineNodeEnum::Vector(sink)]);
         Pipeline {
@@ -90,7 +92,7 @@ impl<T: Clone + Send> Pipeline<T> {
             let mut thread_container: PipelineThread<T> = thread_containers.pop_front().unwrap();
 
             let join_handle: thread::JoinHandle<()> = thread::spawn(move || {
-                let mut state: &PipelineThreadState = &PipelineThreadState::STOPPED;
+                let state: &PipelineThreadState = &PipelineThreadState::STOPPED;
                 while true {
                     if let PipelineThreadState::KILLED = state {
                         break;
@@ -98,7 +100,7 @@ impl<T: Clone + Send> Pipeline<T> {
                     else {
                         thread_container.call();
                     }
-                    state = &thread_container.check_state().lock().unwrap();
+                    let state = &thread_container.check_state().lock().unwrap();
                 }
             });
         }
@@ -114,5 +116,6 @@ impl<T: Clone + Send> Pipeline<T> {
 }
 
 
+// two main types of pipelines supported. Serialization should take place in source and or sink components at the ends so that generics dont become too great an issue within pipeline
 pub type DSPPipeline = Pipeline<Complex<f32>>;
 pub type BytePipeline = Pipeline<u8>;

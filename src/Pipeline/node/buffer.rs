@@ -3,7 +3,7 @@ use super::prototype::PipelineNodeGeneric;
 use std::collections::VecDeque;
 
 
-pub struct ScalarToVectorAdapter<T> {
+pub struct ScalarToVectorAdapter<T: 'static + Send> {
     in_receiver: ReceiverWrapper<T>,
     out_sender: SenderWrapper<Vec<T>>,
     copy_buffer: Vec<T>,
@@ -13,14 +13,14 @@ pub struct ScalarToVectorAdapter<T> {
 }
 
 
-pub struct VectorToScalarAdapter<T> {
+pub struct VectorToScalarAdapter<T: 'static + Send> {
     in_receiver: ReceiverWrapper<Vec<T>>,
     out_sender: SenderWrapper<T>,
     buff_size: usize,
 }
 
 
-impl<T: Send + Clone> PipelineNodeGeneric for ScalarToVectorAdapter<T> {
+impl<T: Send + Clone + 'static> PipelineNodeGeneric for ScalarToVectorAdapter<T> {
     fn call(&mut self) {
         let in_data: T = self.in_receiver.recv().unwrap();
         self.copy_buffer[self.counter] = in_data; // dereference for copy
@@ -41,7 +41,7 @@ impl<T: Send + Clone> PipelineNodeGeneric for ScalarToVectorAdapter<T> {
 }
 
 
-impl<T> ScalarToVectorAdapter<T> {
+impl<T: 'static + Send> ScalarToVectorAdapter<T> {
     pub fn new(in_receiver: ReceiverWrapper<T>, out_sender: SenderWrapper<Vec<T>>,
         // active_buffer: Vec<Complex<f32>>,
         buff_size: usize) -> ScalarToVectorAdapter<T> {
@@ -56,7 +56,7 @@ impl<T> ScalarToVectorAdapter<T> {
 }
 
 
-impl<T: Send> PipelineNodeGeneric for VectorToScalarAdapter<T> {
+impl<T: Send + 'static> PipelineNodeGeneric for VectorToScalarAdapter<T> {
     fn call(&mut self) {        
         let mut in_data: VecDeque<T> = VecDeque::from(self.in_receiver.recv().unwrap());
 
@@ -70,7 +70,7 @@ impl<T: Send> PipelineNodeGeneric for VectorToScalarAdapter<T> {
 }
 
 
-impl<T> VectorToScalarAdapter<T> {
+impl<T: 'static + Send> VectorToScalarAdapter<T> {
     pub fn new(in_receiver: ReceiverWrapper<Vec<T>>, out_sender: SenderWrapper<T>, buff_size: usize) -> VectorToScalarAdapter<T> {
         VectorToScalarAdapter {
             in_receiver: in_receiver,

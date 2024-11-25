@@ -9,7 +9,7 @@ pub struct PipelineNode<T> {
     output: Option<Box<dyn Sink<T>>>
 }
 
-impl<T> PipelineNode <T> {
+impl<T: Send + Clone + 'static> PipelineNode <T> {
     pub fn new(step: Box<PipelineStep<T>>) -> PipelineNode<T> {
         PipelineNode {
             step,
@@ -23,7 +23,7 @@ pub trait PipelineNodeGeneric {
     fn call(&mut self); // have this pass errors
 }
 
-impl<T> PipelineNodeGeneric for PipelineNode<T> {
+impl<T: Send + Clone + 'static> PipelineNodeGeneric for PipelineNode<T> {
     fn call(&mut self) {
         let input_data: T = self.input.as_mut().unwrap().recv().unwrap();
         let output_data: T = (self.step)(input_data);
@@ -35,7 +35,7 @@ impl<T> PipelineNodeGeneric for PipelineNode<T> {
     }
 }
 
-impl<T> PipelineNode<T> {
+impl<T: Send + Clone + 'static> PipelineNode<T> {
     pub fn set_input(&mut self, input: Box<dyn Source<T>>) {
         self.input = Some(input);
     }

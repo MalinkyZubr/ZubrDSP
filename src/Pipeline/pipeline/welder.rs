@@ -14,7 +14,7 @@ impl Welder {
             buff_size
         }
     } // DANGER: Implications of static is that it lives as long as the program in HEAP! May need explicit drop to prevent runtime leaks!
-    pub fn weld<T: Clone + Send>(&self, src: &mut PipelineNodeEnum<T>, dst: &mut PipelineNodeEnum<T>) -> Option<PipelineNodeEnum<T>> {
+    pub fn weld<T: Clone + Send + 'static>(&self, src: &mut PipelineNodeEnum<T>, dst: &mut PipelineNodeEnum<T>) -> Option<PipelineNodeEnum<T>> {
         match (src, dst) {
             (PipelineNodeEnum::Scalar(src), 
             PipelineNodeEnum::Scalar(dst)) => {self.weld_scalar::<T>(src, dst); None},
@@ -32,19 +32,19 @@ impl Welder {
         }
     }
 
-    fn weld_scalar<T: Clone + Send>(&self, src: &mut PipelineNode<T>, dst: &mut PipelineNode<T>) {
+    fn weld_scalar<T: Clone + Send + 'static>(&self, src: &mut PipelineNode<T>, dst: &mut PipelineNode<T>) {
         let (sender, receiver) = create_node_connection::<T>();
         src.set_output(Box::new(sender));
         dst.set_input(Box::new(receiver));
     }
 
-    fn weld_vector<T: Clone + Send>(&self, src: &mut PipelineNode<Vec<T>>, dst: &mut PipelineNode<Vec<T>>) {
+    fn weld_vector<T: Clone + Send + 'static>(&self, src: &mut PipelineNode<Vec<T>>, dst: &mut PipelineNode<Vec<T>>) {
         let (sender, receiver) = create_node_connection::<Vec<T>>();
         src.set_output(Box::new(sender));
         dst.set_input(Box::new(receiver));
     }
 
-    fn weld_scalar_to_vector<T: Clone + Send>(&self, src: &mut PipelineNode<T>, dst: &mut PipelineNode<Vec<T>>) -> ScalarToVectorAdapter<T> {
+    fn weld_scalar_to_vector<T: Clone + Send + 'static>(&self, src: &mut PipelineNode<T>, dst: &mut PipelineNode<Vec<T>>) -> ScalarToVectorAdapter<T> {
         let (scalar_sender, scalar_receiver) = create_node_connection::<T>();
         let (vector_sender, vector_receiver) = create_node_connection::<Vec<T>>();
         
@@ -55,7 +55,7 @@ impl Welder {
         return adapter;
     }
 
-    fn weld_vector_to_scalar<T: Clone + Send>(&self, src: &mut PipelineNode<Vec<T>>, dst: &mut PipelineNode<T>) -> VectorToScalarAdapter<T> {
+    fn weld_vector_to_scalar<T: Clone + Send + 'static>(&self, src: &mut PipelineNode<Vec<T>>, dst: &mut PipelineNode<T>) -> VectorToScalarAdapter<T> {
         let (scalar_sender, scalar_receiver) = create_node_connection::<T>();
         let (vector_sender, vector_receiver) = create_node_connection::<Vec<T>>();
         
