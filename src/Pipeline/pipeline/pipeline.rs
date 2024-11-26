@@ -92,15 +92,8 @@ impl<T: Clone + Send + 'static> Pipeline<T> {
             let mut thread_container: PipelineThread<T> = thread_containers.pop_front().unwrap();
 
             let join_handle: thread::JoinHandle<()> = thread::spawn(move || {
-                let state: &PipelineThreadState = &PipelineThreadState::STOPPED;
-                while true {
-                    if let PipelineThreadState::KILLED = state {
-                        break;
-                    }
-                    else {
-                        thread_container.call();
-                    }
-                    let state = &thread_container.check_state().lock().unwrap();
+                while *thread_container.check_state().lock().unwrap() != PipelineThreadState::KILLED{
+                    thread_container.call();
                 }
             });
         }
