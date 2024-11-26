@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::thread::{self, JoinHandle, Thread};
 use std::time::Duration;
 use std::sync::{Mutex, Arc};
@@ -54,7 +55,7 @@ impl ThreadTapManager {
     }
 
     // async fn 
-    pub async fn start_taps(&mut self) -> Result<(), String> {
+    pub async fn start_taps(self) -> Result<(), String> {
         let sender_task: task::JoinHandle<()> = task::spawn(ThreadTapManager::receive_orders(self.state.clone(), self.message_receiver.clone()));
         let receiver_task: task::JoinHandle<()> = task::spawn(ThreadTapManager::send_diagnostic(self.state.clone(), self.execution_time.clone(), self.message_sender.clone()));
 
@@ -70,7 +71,7 @@ pub struct PipelineThread<T: Send + Clone + 'static> {
     node: Arc<Mutex<PipelineNodeEnum<T>>>,
     state: Arc<Mutex<PipelineThreadState>>,
     execution_time: Arc<Mutex<f32>>,
-    tap_task_manager: JoinHandle<()>
+    tap_task_manager: Option<JoinHandle<()>>
 
     // implement tap here for data so it can be viewed from outside
 }
@@ -86,10 +87,10 @@ impl<T: Clone + Send + 'static> PipelineThread<T> {
             node: Arc::new(Mutex::new(node)), // requires node to be borrowed as static?
             state: state_arc.clone(),
             execution_time: time_arc.clone(),
-            tap_task_manager: thread::spawn(move || {
+            tap_task_manager: Some(thread::spawn(move || {
                 let task = task::spawn(tap_manager.start_taps());
                 async_std::task::block_on(task); // use tokio if want to have separate async runtime for thread
-            }),
+            })),
         }
     }
     fn reset(&mut self) {
@@ -109,7 +110,10 @@ impl<T: Clone + Send + 'static> PipelineThread<T> {
     }
     pub fn kill(&mut self) {
         let mut state = self.state.lock().unwrap();
-        self.tap_task_manager.join();
+        
+        if let Some(handle) = self.tap_task_manager.take() {
+            handle.join();
+        }
         *state = PipelineThreadState::KILLED;
     }
     pub fn run(&mut self) {
