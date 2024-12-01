@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use num::Complex;
 use std::thread;
 use crate::Pipeline::node::prototype::{PipelineNode, PipelineStep};
@@ -10,7 +11,7 @@ use super::thread::thread_friend::PipelineThreadFriend;
 
 
 
-pub struct Pipeline<T: Clone + Send + 'static> {
+pub struct Pipeline<T: Clone + Send + 'static + Debug> {
     buff_size: usize,
     thread_pool: Vec<thread::JoinHandle<()>>,
     node_pool: VecDeque<PipelineNodeEnum<T>>,
@@ -18,7 +19,7 @@ pub struct Pipeline<T: Clone + Send + 'static> {
     thread_friends: Vec<PipelineThreadFriend>
 }
 
-impl<T: Clone + Send + 'static> Pipeline<T> {
+impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
     pub fn new(buff_size: usize, source: PipelineNode<Vec<T>>, sink: PipelineNode<Vec<T>>) -> Pipeline<T> {
         let node_pool: VecDeque<PipelineNodeEnum<T>> = VecDeque::from([PipelineNodeEnum::Vector(source), PipelineNodeEnum::Vector(sink)]);
         Pipeline {

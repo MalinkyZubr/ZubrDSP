@@ -1,13 +1,13 @@
 use std::sync::{Arc, Mutex};
 
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PipelineError {
     ResumeStoppedThread,
 }
 
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug, Copy)]
 pub enum PipelineThreadState {
     RUNNING,
     STOPPED,
@@ -17,8 +17,8 @@ pub enum PipelineThreadState {
 
 
 pub struct BaseThreadDiagnostic {
-    thread_state: Arc<Mutex<PipelineThreadState>>,
-    execution_time: Arc<Mutex<f32>>
+    pub thread_state: Arc<Mutex<PipelineThreadState>>,
+    pub execution_time: Arc<Mutex<f32>>
 }
 
 

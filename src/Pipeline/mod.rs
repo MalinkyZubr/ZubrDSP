@@ -1,3 +1,3 @@
-mod node;
-mod pipeline;
-mod manager;
+pub mod node;
+pub mod pipeline;
+pub mod manager;
