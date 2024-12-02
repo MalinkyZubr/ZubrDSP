@@ -1,9 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PipelineError {
     ResumeStoppedThread,
+    ComputeError
 }
 
 
@@ -17,13 +18,13 @@ pub enum PipelineThreadState {
 
 
 pub struct BaseThreadDiagnostic {
-    pub thread_state: Arc<Mutex<PipelineThreadState>>,
-    pub execution_time: Arc<Mutex<f32>>
+    pub thread_state: Arc<RwLock<PipelineThreadState>>,
+    pub execution_time: Arc<RwLock<f32>>
 }
 
 
 impl BaseThreadDiagnostic {
-    pub fn new(thread_state: Arc<Mutex<PipelineThreadState>>, execution_time: Arc<Mutex<f32>>) -> BaseThreadDiagnostic {
+    pub fn new(thread_state: Arc<RwLock<PipelineThreadState>>, execution_time: Arc<RwLock<f32>>) -> BaseThreadDiagnostic {
         BaseThreadDiagnostic {
             thread_state,
             execution_time

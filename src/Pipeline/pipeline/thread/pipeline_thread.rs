@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::thread::{self, JoinHandle, Thread};
 use std::time::Duration;
-use std::sync::{Mutex, Arc};
+use std::sync::{Mutex, Arc, RwLock};
 use async_std::task::{self, Task};
 use async_std::channel;
 use futures::future::join_all;
@@ -16,12 +16,12 @@ use super::thread_friend::PipelineThreadFriend;
 pub struct ThreadTapManager {
     message_receiver: Arc<channel::Receiver<PipelineThreadState>>,
     message_sender: Arc<channel::Sender<BaseThreadDiagnostic>>,
-    state: Arc<Mutex<PipelineThreadState>>,
-    execution_time: Arc<Mutex<f32>>,
+    state: Arc<RwLock<PipelineThreadState>>,
+    execution_time: Arc<RwLock<f32>>,
 }
 
 impl ThreadTapManager {
-    pub fn new(message_receiver: channel::Receiver<PipelineThreadState>, message_sender: channel::Sender<BaseThreadDiagnostic>, state: Arc<Mutex<PipelineThreadState>>, execution_time: Arc<Mutex<f32>>) -> Self {
+    pub fn new(message_receiver: channel::Receiver<PipelineThreadState>, message_sender: channel::Sender<BaseThreadDiagnostic>, state: Arc<RwLock<PipelineThreadState>>, execution_time: Arc<RwLock<f32>>) -> Self {
         Self {
             message_receiver: Arc::new(message_receiver),
             message_sender: Arc::new(message_sender),
@@ -30,43 +30,36 @@ impl ThreadTapManager {
         }
     }
 
-    async fn send_diagnostic(state: Arc<Mutex<PipelineThreadState>>, execution_time: Arc<Mutex<f32>>, message_sender: Arc<channel::Sender<BaseThreadDiagnostic>>) {
-        dbg!("Starting sender!");
+    async fn send_diagnostic(state: Arc<RwLock<PipelineThreadState>>, execution_time: Arc<RwLock<f32>>, message_sender: Arc<channel::Sender<BaseThreadDiagnostic>>) {
         while {
             let current_state = {
-                let state = state.lock().unwrap(); // Lock the mutex briefly
+                let state = state.read().unwrap(); // Lock the mutex briefly
                 *state
             };
             current_state != PipelineThreadState::KILLED
         } {
-            dbg!("Head of sender");
             let result = message_sender.send(
                 BaseThreadDiagnostic::new(
                     state.clone(), 
                     execution_time.clone())
                 ).await;
-            dbg!("SENDER RESULT: {}", result);
             async_std::task::sleep(Duration::from_millis(100)).await
         }
     }
 
-    async fn receive_orders(state: Arc<Mutex<PipelineThreadState>>, message_receiver: Arc<channel::Receiver<PipelineThreadState>>) {
-        dbg!("Starting receiver!");
+    async fn receive_orders(state: Arc<RwLock<PipelineThreadState>>, message_receiver: Arc<channel::Receiver<PipelineThreadState>>) {
         while {
             let current_state = {
-                let state = state.lock().unwrap(); // Lock the mutex briefly
+                let state = state.read().unwrap(); // Lock the mutex briefly
                 *state
             };
             current_state != PipelineThreadState::KILLED
         } {
-            dbg!("Head of receiver");
             let received_state: Result<PipelineThreadState, channel::RecvError> = message_receiver.recv().await;
             match received_state {
                 Ok(result) => { 
-                    dbg!("Received!");
-                    let mut state = state.lock().unwrap();
+                    let mut state = state.write().unwrap();
                     *state = result;
-                    dbg!("State Was Set to {}", &*state);
                 },
                 Err(error) => {
                     dbg!("RECEIVE ERROR!: {}", error);
@@ -101,8 +94,8 @@ impl ThreadTapManager {
 
 pub struct PipelineThread<T: Send + Clone + 'static + Debug> {
     node: Arc<Mutex<PipelineNodeEnum<T>>>,
-    state: Arc<Mutex<PipelineThreadState>>,
-    execution_time: Arc<Mutex<f32>>,
+    state: Arc<RwLock<PipelineThreadState>>,
+    execution_time: Arc<RwLock<f32>>,
     tap_task_manager: Option<JoinHandle<()>>
 
     // implement tap here for data so it can be viewed from outside
@@ -110,8 +103,8 @@ pub struct PipelineThread<T: Send + Clone + 'static + Debug> {
 
 impl<T: Clone + Send + 'static + Debug> PipelineThread<T> {
     pub fn new(node: PipelineNodeEnum<T>, message_receiver: channel::Receiver<PipelineThreadState>, message_sender: channel::Sender<BaseThreadDiagnostic>) -> PipelineThread<T> { // requires node to be borrowed as static?
-        let state_arc: Arc<Mutex<PipelineThreadState>> =  Arc::new(Mutex::new(PipelineThreadState::STOPPED));
-        let time_arc: Arc<Mutex<f32>> = Arc::new(Mutex::new(0 as f32));
+        let state_arc: Arc<RwLock<PipelineThreadState>> =  Arc::new(RwLock::new(PipelineThreadState::STOPPED));
+        let time_arc: Arc<RwLock<f32>> = Arc::new(RwLock::new(0 as f32));
 
         let tap_manager = ThreadTapManager::new(message_receiver, message_sender, state_arc.clone(), time_arc.clone());
 
@@ -124,47 +117,17 @@ impl<T: Clone + Send + 'static + Debug> PipelineThread<T> {
             })),
         }
     }
-
-    fn reset(&mut self) {
-
-    }
-
-    pub fn stop(&mut self) {
-        let mut state = self.state.lock().unwrap();
-        *state = PipelineThreadState::STOPPED;
-    }
-    pub fn resume(&mut self) {
-        let mut state = self.state.lock().unwrap();
-        match *state {
-            PipelineThreadState::STOPPED => *state = PipelineThreadState::RUNNING,
-            PipelineThreadState::ERROR(err) => {},
-            _ => *state = PipelineThreadState::ERROR(PipelineError::ResumeStoppedThread)
-        };
-    }
-    pub fn kill(&mut self) {
-        let mut state = self.state.lock().unwrap();
-        
-        if let Some(handle) = self.tap_task_manager.take() {
-            handle.join();
-        }
-        *state = PipelineThreadState::KILLED;
-    }
-    pub fn run(&mut self) {
-        self.reset();
-        let mut state = self.state.lock().unwrap();
-        *state = PipelineThreadState::RUNNING;
-    }
-    pub fn check_state(&self) -> &Arc<Mutex<PipelineThreadState>> {
+    pub fn check_state(&self) -> &Arc<RwLock<PipelineThreadState>> {
         &self.state
     }
     pub fn call(&mut self) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.read().unwrap();
         let now = Instant::now();
         match *state {
             PipelineThreadState::RUNNING => self.node.lock().unwrap().call(),
             _ => thread::sleep(Duration::from_millis(500))
         };
-        let mut execution_time = self.execution_time.lock().unwrap();
+        let mut execution_time = self.execution_time.write().unwrap();
         *execution_time = now.elapsed().as_secs_f32();
     }
 }

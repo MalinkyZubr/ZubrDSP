@@ -138,8 +138,8 @@ mod ThreadTests {
         let (in_tx, in_rx) = async_std::channel::bounded::<PipelineThreadState>(1); // maybe an issue to have unbounded if backups?
         let (out_tx, out_rx) = async_std::channel::bounded::<BaseThreadDiagnostic>(1);
 
-        let state = std::sync::Arc::new(std::sync::Mutex::new(PipelineThreadState::RUNNING));
-        let time_taken = std::sync::Arc::new(std::sync::Mutex::new(0 as f32));
+        let state = std::sync::Arc::new(std::sync::RwLock::new(PipelineThreadState::RUNNING));
+        let time_taken = std::sync::Arc::new(std::sync::RwLock::new(0 as f32));
         
         let manager: ThreadTapManager = ThreadTapManager::new(in_rx, out_tx, state, time_taken);
 
@@ -150,15 +150,20 @@ mod ThreadTests {
 
         let received_state = out_rx.recv_blocking().unwrap();
 
-        let received = received_state.thread_state.lock().unwrap();
+        {
+        let received = received_state.thread_state.read().unwrap();
         assert!(*received == PipelineThreadState::RUNNING);
+        }
 
         in_tx.send_blocking(PipelineThreadState::STOPPED);
+
         let received_state = out_rx.recv_blocking().unwrap();
 
-        let received = received_state.thread_state.lock().unwrap();
+        {
+        let received = received_state.thread_state.read().unwrap();
         dbg!("HERE! {}", &*received);
         assert!(*received == PipelineThreadState::STOPPED);
+        }
 
         in_tx.send_blocking(PipelineThreadState::KILLED);
         manager_thread.join();
