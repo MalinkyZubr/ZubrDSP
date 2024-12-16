@@ -132,22 +132,34 @@ mod NodeTests {
 
 #[cfg(test)]
 mod ThreadTests {
-    use crate::Pipeline::{pipeline::thread::{pipeline_thread::ThreadTapManager, thread_diagnostics::{BaseThreadDiagnostic, PipelineThreadState}}};
+    use std::sync::{Arc, Mutex};
+    use crate::Pipeline::{
+        node::{prototype::{PipelineNode}, messages::create_node_connection}, 
+        pipeline::{
+            welder::Welder,
+            node_enum::PipelineNodeEnum, thread::{
+                pipeline_thread::{
+                    create_thread_and_tap, ThreadTapManager},
+                    thread_diagnostics::{
+                        BaseThreadDiagnostic, PipelineThreadState}
+                    }
+                }
+            };
     #[test]
     fn tap_manager() {
         let (in_tx, in_rx) = async_std::channel::bounded::<PipelineThreadState>(1); // maybe an issue to have unbounded if backups?
         let (out_tx, out_rx) = async_std::channel::bounded::<BaseThreadDiagnostic>(1);
 
-        let state = std::sync::Arc::new(std::sync::RwLock::new(PipelineThreadState::RUNNING));
-        let time_taken = std::sync::Arc::new(std::sync::RwLock::new(0 as f32));
+        let state = Arc::new(std::sync::RwLock::new(PipelineThreadState::RUNNING));
+        let time_taken = Arc::new(std::sync::RwLock::new(0 as f32));
         
         let manager: ThreadTapManager = ThreadTapManager::new(in_rx, out_tx, state, time_taken);
 
         let manager_thread = std::thread::spawn(move || {
             async_std::task::block_on(manager.start_taps()); // use tokio if want to have separate async runtime for thread
         });
-        std::thread::sleep(std::time::Duration::from_millis(1000));
 
+        std::thread::sleep(std::time::Duration::from_millis(1000));
         let received_state = out_rx.recv_blocking().unwrap();
 
         {
@@ -156,9 +168,9 @@ mod ThreadTests {
         }
 
         in_tx.send_blocking(PipelineThreadState::STOPPED);
-
         let received_state = out_rx.recv_blocking().unwrap();
 
+        std::thread::sleep(std::time::Duration::from_millis(1000));
         {
         let received = received_state.thread_state.read().unwrap();
         dbg!("HERE! {}", &*received);
@@ -167,5 +179,22 @@ mod ThreadTests {
 
         in_tx.send_blocking(PipelineThreadState::KILLED);
         manager_thread.join();
+    }
+
+    #[test]
+    fn thread() {
+        let mut node = PipelineNode::new(Box::new(move |x: u8| {
+            x + 1
+        }));
+
+        let (mut input_send, input_receive) = create_node_connection::<u8>();
+        let (output_send, mut output_receive) = create_node_connection::<u8>();
+
+        node.set_input(Box::new(input_receive));
+        node.set_output(Box::new(output_send));
+
+        let (mut thread, friend) = create_thread_and_tap(
+            PipelineNodeEnum::Scalar(node)
+        );
     }
 }

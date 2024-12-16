@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use std::thread::{self, JoinHandle, Thread};
 use std::time::Duration;
 use std::sync::{Mutex, Arc, RwLock};
-use async_std::task::{self, Task};
-use async_std::channel;
+use async_std::channel::Recv;
+use async_std::{task::{self, Task}, channel, io::timeout};
 use futures::future::join_all;
 use std::time::Instant;
 
@@ -36,15 +36,22 @@ impl ThreadTapManager {
                 let state = state.read().unwrap(); // Lock the mutex briefly
                 *state
             };
+            dbg!("{}", &current_state);
             current_state != PipelineThreadState::KILLED
         } {
-            let result = message_sender.send(
+            dbg!("THREAD STATE: {}", state.clone().read());
+            let result = timeout(Duration::from_millis(100), async {
+                let result = message_sender.send(
                 BaseThreadDiagnostic::new(
                     state.clone(), 
                     execution_time.clone())
                 ).await;
+
+                Ok(())
+            }).await;
             async_std::task::sleep(Duration::from_millis(100)).await
         }
+        dbg!("ENDED SEND DIAGNOSTIC");
     }
 
     async fn receive_orders(state: Arc<RwLock<PipelineThreadState>>, message_receiver: Arc<channel::Receiver<PipelineThreadState>>) {
@@ -55,9 +62,14 @@ impl ThreadTapManager {
             };
             current_state != PipelineThreadState::KILLED
         } {
-            let received_state: Result<PipelineThreadState, channel::RecvError> = message_receiver.recv().await;
+            let received_state: Result<PipelineThreadState, channel::RecvError> = timeout(Duration::from_millis(1000), async {
+                    Ok(message_receiver.recv().await)
+                }
+            ).await.unwrap_or(Err(channel::RecvError));
+
             match received_state {
                 Ok(result) => { 
+                    dbg!("RECEIVED STATE: {}", result.clone());
                     let mut state = state.write().unwrap();
                     *state = result;
                 },
@@ -67,6 +79,8 @@ impl ThreadTapManager {
             }
             async_std::task::sleep(Duration::from_millis(100)).await
         }
+
+        dbg!("ENDED RECEIVE ORDERS");
     }
 
     // async fn 
