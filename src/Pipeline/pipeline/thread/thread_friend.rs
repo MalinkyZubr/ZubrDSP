@@ -5,13 +5,15 @@ use super::thread_diagnostics::{BaseThreadDiagnostic, PipelineError, PipelineThr
 pub struct PipelineThreadFriend {
     message_receiver: channel::Receiver<BaseThreadDiagnostic>,
     message_sender: channel::Sender<PipelineThreadState>,
+    pub id: String
 }
 
 impl PipelineThreadFriend {
-    pub fn new(receiver: channel::Receiver<BaseThreadDiagnostic>, sender: channel::Sender<PipelineThreadState>) -> PipelineThreadFriend {
+    pub fn new(receiver: channel::Receiver<BaseThreadDiagnostic>, sender: channel::Sender<PipelineThreadState>, id: String) -> PipelineThreadFriend {
         PipelineThreadFriend {
             message_receiver: receiver,
             message_sender: sender,
+            id
         }
     }
 

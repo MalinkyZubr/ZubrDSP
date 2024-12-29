@@ -14,14 +14,14 @@ use super::thread::thread_friend::PipelineThreadFriend;
 pub struct Pipeline<T: Clone + Send + 'static + Debug> {
     buff_size: usize,
     thread_pool: Vec<thread::JoinHandle<()>>,
-    node_pool: VecDeque<PipelineNodeEnum<T>>,
+    node_pool: VecDeque<(PipelineNodeEnum<T>, String)>,
     welder: Welder,
     thread_friends: Vec<PipelineThreadFriend>
 }
 
 impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
     pub fn new(buff_size: usize, source: PipelineNode<Vec<T>>, sink: PipelineNode<Vec<T>>) -> Pipeline<T> {
-        let node_pool: VecDeque<PipelineNodeEnum<T>> = VecDeque::from([PipelineNodeEnum::Vector(source), PipelineNodeEnum::Vector(sink)]);
+        let node_pool: VecDeque<(PipelineNodeEnum<T>, String)> = VecDeque::from([(PipelineNodeEnum::Vector(source), String::from("Source")), (PipelineNodeEnum::Vector(sink), String::from("Sink"))]);
         Pipeline {
             buff_size,
             thread_pool: Vec::new(),
@@ -30,22 +30,23 @@ impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
             thread_friends: Vec::new(),
         }
     }
-    pub fn add_scalar_step(&mut self, step: Box<PipelineStep<T>>) {//node: PipelineNode<T>) {
+
+    pub fn add_scalar_step(&mut self, step: Box<PipelineStep<T>>, id: String) {//node: PipelineNode<T>) {
         let node_enum: PipelineNodeEnum<T> = PipelineNodeEnum::Scalar(PipelineNode::new(step));
-        self.node_pool.insert(self.node_pool.len() - 1, node_enum);
+        self.node_pool.insert(self.node_pool.len() - 1, (node_enum, id));
     }
 
-    pub fn add_vector_step(&mut self, step: Box<PipelineStep<Vec<T>>>) {
+    pub fn add_vector_step(&mut self, step: Box<PipelineStep<Vec<T>>>, id: String) {
         let node_enum: PipelineNodeEnum<T> = PipelineNodeEnum::Vector(PipelineNode::new(step));
-        self.node_pool.insert(self.node_pool.len() - 1, node_enum);
+        self.node_pool.insert(self.node_pool.len() - 1, (node_enum, id));
     }
 
-    fn threadify_nodes(&mut self, secondary: &mut VecDeque<PipelineNodeEnum<T>>) -> VecDeque<PipelineThread<T>> {
+    fn threadify_nodes(&mut self, secondary: &mut VecDeque<(PipelineNodeEnum<T>, String)>) -> VecDeque<PipelineThread<T>> {
         let mut thread_containers: VecDeque<PipelineThread<T>> = VecDeque::new();
 
         while secondary.len() > 0 {
-            let node: PipelineNodeEnum<T> = secondary.pop_front().unwrap();
-            let (thread, friend) = create_thread_and_tap(node);
+            let (node, id): (PipelineNodeEnum<T>, String) = secondary.pop_front().unwrap();
+            let (thread, friend) = create_thread_and_tap(node, id);
             thread_containers.push_back(thread);
             self.thread_friends.push(friend);
         };
@@ -55,7 +56,7 @@ impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
 
     fn assemble_pipeline(&mut self) -> Result<VecDeque<PipelineThread<T>>, ()> {
         let mut thread_containers: VecDeque<PipelineThread<T>> = VecDeque::new();
-        let mut secondary: VecDeque<PipelineNodeEnum<T>> = VecDeque::new();
+        let mut secondary: VecDeque<(PipelineNodeEnum<T>, String)> = VecDeque::new();
 
         let length: usize = self.node_pool.len();
 
@@ -64,16 +65,16 @@ impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
         }
 
         //thread_containers.push(PipelineThread::new(self.welder.weld(self.source, ).unwrap()));
-        let mut previous = self.node_pool.pop_front().unwrap();
+        let mut previous: (PipelineNodeEnum<T>, String) = self.node_pool.pop_front().unwrap();
 
         while self.node_pool.len() > 0 {
-            let mut current = self.node_pool.pop_front().unwrap();
-            let adapter: Option<PipelineNodeEnum<T>> = self.welder.weld::<T>(&mut previous, &mut current);
+            let mut current: (PipelineNodeEnum<T>, String) = self.node_pool.pop_front().unwrap();
+            let adapter: Option<PipelineNodeEnum<T>> = self.welder.weld::<T>(&mut previous.0, &mut current.0);
 
             match adapter {
                 None => {},
                 Some(adpt) => {
-                    let (thread, friend) = create_thread_and_tap(adpt);
+                    let (thread, friend) = create_thread_and_tap(adpt, format!("{}-{}-Welder", &previous.1, &current.1));
                     thread_containers.push_back(thread);
                     self.thread_friends.push(friend);
                 }
@@ -82,7 +83,10 @@ impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
             secondary.push_back(previous);
             previous = current;
         };
+
+        secondary.push_back(previous);
         
+        dbg!("SECONDARY LENGTH {}", secondary.len());
         thread_containers.extend(self.threadify_nodes(&mut secondary));
 
         return Ok(thread_containers);
@@ -100,13 +104,36 @@ impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
         }
     }
 
-    pub fn run(&mut self) {}
+    async fn send_watchdogs(&mut self) {
 
-    pub fn pause(&mut self) {}
+    }
 
-    pub fn resume(&mut self) {}
+    pub fn compose_threads(&mut self) {
+        let pipeline = self.assemble_pipeline().unwrap();
+        dbg!("PIPELINE LENGTH {}", pipeline.len());
+        
+        self.run_pipeline(pipeline);
+    }
 
-    pub fn end(&mut self) {}
+    pub async fn run(&mut self) {
+        for friend in self.thread_friends.iter_mut() {
+            friend.push_state(PipelineThreadState::RUNNING).await;
+            dbg!("MASSIVE TURN ON!");
+        }
+    }
+
+    pub async fn stop(&mut self) {
+        for friend in self.thread_friends.iter_mut() {
+            friend.push_state(PipelineThreadState::STOPPED).await;
+        }
+    }
+
+    pub async fn end(&mut self) {
+        for friend in self.thread_friends.iter_mut() {
+            friend.push_state(PipelineThreadState::KILLED).await;
+            dbg!("MASSIVE TURN OFF");
+        }
+    }
 }
 
 

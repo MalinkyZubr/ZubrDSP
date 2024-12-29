@@ -55,8 +55,7 @@ impl<T: 'static + Send + Debug> ScalarToVectorAdapter<T> {
 impl<T: Send + 'static + Debug> PipelineNodeGeneric for VectorToScalarAdapter<T> {
     fn call(&mut self) {        
         let mut in_data: VecDeque<T> = VecDeque::from(self.in_receiver.recv().unwrap());
-        while in_data.len() > 0 {  
-            dbg!("{}", &in_data.len()); 
+        while in_data.len() > 0 {   
             match self.out_sender.send(in_data.pop_front().unwrap()) {
                 Ok(()) => {}
                 Err(msg) => {}

@@ -2,7 +2,6 @@ use std::fmt::Debug;
 
 use super::messages::{Source, Sink};
 
-
 pub type PipelineStep<T> = dyn Fn(T) -> T + Send + 'static;
 
 pub struct PipelineNode<T: Send + Clone + 'static + Debug> {
