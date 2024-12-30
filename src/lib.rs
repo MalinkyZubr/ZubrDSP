@@ -1,4 +1,5 @@
 mod Pipeline;
+mod ByteLine;
 use std::thread;
 use std::time;
 use std::sync::{Arc, Mutex};
