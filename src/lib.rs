@@ -20,7 +20,7 @@ mod NodeTests {
     #[test]
     fn prototype_test() {
         dbg!("TEST!");
-        let test_step: Box<PipelineStep<u8>> = Box::new(|a: u8| a * 2);
+        let test_step: Box<PipelineStep<u8>> = Box::new(|a: u8, b: &mut Vec<u8>| a * 2);
         let mut new_node: PipelineNode<u8> = PipelineNode::new(test_step);
         let (mut input_send, input_receive) = create_node_connection::<u8>();
         let (output_send, mut output_receive) = create_node_connection::<u8>();
@@ -188,7 +188,7 @@ mod ThreadTests {
 
     #[test]
     fn thread() {
-        let mut node = PipelineNode::new(Box::new(move |x: u8| {
+        let mut node = PipelineNode::new(Box::new(move |x: u8, y: &mut Vec<u8>| {
             x * 2
         }));
 
@@ -292,12 +292,12 @@ mod PipelineTests {
         let (mut input_send, input_receive) = create_node_connection::<u8>();
         let (output_send, mut output_receive) = create_node_connection::<u8>();
 
-        let test_step_1: Box<PipelineStep<u8>> = Box::new(|a: u8| a * 2);
+        let test_step_1: Box<PipelineStep<u8>> = Box::new(|a: u8, b: &mut Vec<u8>| a * 2);
         let mut node_1 = PipelineNode::new(test_step_1);
         node_1.set_input(Box::new(input_receive));
         let mut new_node_1: PipelineNodeEnum<u8> = PipelineNodeEnum::Scalar(node_1);
 
-        let test_step_2: Box<PipelineStep<u8>> = Box::new(|a: u8| a + 10);
+        let test_step_2: Box<PipelineStep<u8>> = Box::new(|a: u8, b: &mut Vec<u8>| a + 10);
         let mut node_2 = PipelineNode::new(test_step_2);
         node_2.set_output(Box::new(output_send));
         let mut new_node_2: PipelineNodeEnum<u8> = PipelineNodeEnum::Scalar(node_2);
@@ -341,7 +341,7 @@ mod PipelineTests {
 
     #[test]
     fn pipeline_test() {
-        let source_step: Box<PipelineStep<Vec<u8>>> = Box::new(|mut a: Vec<u8>| {
+        let source_step: Box<PipelineStep<Vec<u8>>> = Box::new(|mut a: Vec<u8>, b: &mut Vec<Vec<u8>>| {
             let mut return_vec = Vec::new();
             for val in a.iter_mut() {
                 return_vec.push(*val * 2);
@@ -352,12 +352,12 @@ mod PipelineTests {
             return_vec
         });
 
-        let intermediate_step: Box<PipelineStep<u8>> = Box::new(|a: u8| {
+        let intermediate_step: Box<PipelineStep<u8>> = Box::new(|a: u8, b: &mut Vec<u8>| {
             let returny = a + 4;
             returny
         });
         
-        let sink_step: Box<PipelineStep<Vec<u8>>> = Box::new(|mut a: Vec<u8>| {
+        let sink_step: Box<PipelineStep<Vec<u8>>> = Box::new(|mut a: Vec<u8>, b: &mut Vec<Vec<u8>>| {
             let mut return_vec = Vec::new();
             for val in a.iter_mut() {
                 return_vec.push(*val + 2);
