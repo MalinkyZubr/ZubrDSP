@@ -2,22 +2,22 @@ use std::fmt::Debug;
 
 use super::messages::{Source, Sink};
 
-pub type PipelineStep<T> = dyn Fn(T, &mut Vec<T>) -> T + Send + 'static;
+pub trait PipelineStep<T: Send + 'static> : Send {
+    fn run(&mut self, input: T) -> T;
+}
 
 pub struct PipelineNode<T: Send + Clone + 'static + Debug> {
-    step: Box<PipelineStep<T>>,
+    step: Box<dyn PipelineStep<T>>,
     input: Option<Box<dyn Source<T>>>,
     output: Option<Box<dyn Sink<T>>>,
-    context: Vec<T>,
 }
 
 impl<T: Send + Clone + 'static + Debug> PipelineNode <T> {
-    pub fn new(step: Box<PipelineStep<T>>) -> PipelineNode<T> {
+    pub fn new(step: Box<dyn PipelineStep<T>>) -> PipelineNode<T> {
         PipelineNode {
             step,
             input: None,
             output: None,
-            context: Vec::new()
         }
     }
 }
@@ -29,7 +29,7 @@ pub trait PipelineNodeGeneric {
 impl<T: Send + Clone + 'static + Debug> PipelineNodeGeneric for PipelineNode<T> { // for tasks like viterbi algorithm, context is needed
     fn call(&mut self) {
         let input_data: T = self.input.as_mut().unwrap().recv().unwrap();
-        let output_data: T = (self.step)(input_data, &mut self.context);
+        let output_data: T = self.step.run(input_data);
 
         match self.output.as_mut().unwrap().send(output_data) {
             Ok(()) => {}

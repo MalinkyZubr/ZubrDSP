@@ -1,20 +1,6 @@
 use crate::Pipeline::node::prototype::PipelineStep;
 use num::integer::Roots;
 
-
-fn series_check_parity_single(stream: &u8) -> u8 { // 1 is odd
-    let mut parity: u8 = 0;
-    let mut index: u8 = 0;
-
-    while index < 8 {
-        let bit_val: u8 = (*stream >> index) & 1;
-        parity ^= bit_val;
-        index += 1;
-    }
-
-    parity
-}
-
 fn series_check_parity_stream(stream: &[u8]) -> u8 {
     let mut parity: u8 = 0;
     

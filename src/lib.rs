@@ -1,5 +1,6 @@
 mod Pipeline;
 mod ByteLine;
+
 use std::thread;
 use std::time;
 use std::sync::{Arc, Mutex};
@@ -17,10 +18,17 @@ mod NodeTests {
 
     use super::*;
 
+    pub struct test_step {}
+    impl PipelineStep<u8> for test_step {
+        fn run(&mut self, a: u8) -> u8 {
+            a * 2
+        }
+    }
+
     #[test]
     fn prototype_test() {
         dbg!("TEST!");
-        let test_step: Box<PipelineStep<u8>> = Box::new(|a: u8, b: &mut Vec<u8>| a * 2);
+        let test_step: Box<dyn PipelineStep<u8>> = Box::new(test_step{});
         let mut new_node: PipelineNode<u8> = PipelineNode::new(test_step);
         let (mut input_send, input_receive) = create_node_connection::<u8>();
         let (output_send, mut output_receive) = create_node_connection::<u8>();
@@ -151,6 +159,9 @@ mod ThreadTests {
                     }
                 }
             };
+
+    use super::*;
+    
     #[test]
     fn tap_manager() {
         let (in_tx, in_rx) = async_std::channel::bounded::<PipelineThreadState>(1); // maybe an issue to have unbounded if backups?
@@ -186,11 +197,16 @@ mod ThreadTests {
         manager_thread.join();
     }
 
+    pub struct test_step_2 {}
+    impl PipelineStep<u8> for test_step_2 {
+        fn run(&mut self, x: u8) -> u8 {
+            x * 2
+        }
+    }
+
     #[test]
     fn thread() {
-        let mut node = PipelineNode::new(Box::new(move |x: u8, y: &mut Vec<u8>| {
-            x * 2
-        }));
+        let mut node = PipelineNode::new(Box::new(test_step_2 {}));
 
         let (mut input_send, input_receive) = create_node_connection::<u8>();
         let (output_send, mut output_receive) = create_node_connection::<u8>();
@@ -261,6 +277,7 @@ mod ThreadTests {
 #[cfg(test)]
 mod PipelineTests {
     use async_std::task;
+    use NodeTests::test_step;
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::sync::mpsc;
@@ -284,6 +301,22 @@ mod PipelineTests {
                 }
             };
     
+    use super::*;
+
+    pub struct test_step_3 {}
+    impl PipelineStep<u8> for test_step_3 {
+        fn run(&mut self, x: u8) -> u8 {
+            x * 2
+        }
+    }
+
+    pub struct test_step_4 {}
+    impl PipelineStep<u8> for test_step_4 {
+        fn run(&mut self, x: u8) -> u8 {
+            x + 10
+        }
+    }
+    
     #[test]
     fn welder_test() {
         let buffer_size: usize = 10;
@@ -292,12 +325,12 @@ mod PipelineTests {
         let (mut input_send, input_receive) = create_node_connection::<u8>();
         let (output_send, mut output_receive) = create_node_connection::<u8>();
 
-        let test_step_1: Box<PipelineStep<u8>> = Box::new(|a: u8, b: &mut Vec<u8>| a * 2);
+        let test_step_1: Box<dyn PipelineStep<u8>> = Box::new(test_step_3 {});
         let mut node_1 = PipelineNode::new(test_step_1);
         node_1.set_input(Box::new(input_receive));
         let mut new_node_1: PipelineNodeEnum<u8> = PipelineNodeEnum::Scalar(node_1);
 
-        let test_step_2: Box<PipelineStep<u8>> = Box::new(|a: u8, b: &mut Vec<u8>| a + 10);
+        let test_step_2: Box<dyn PipelineStep<u8>> = Box::new(test_step_4 {});
         let mut node_2 = PipelineNode::new(test_step_2);
         node_2.set_output(Box::new(output_send));
         let mut new_node_2: PipelineNodeEnum<u8> = PipelineNodeEnum::Scalar(node_2);
@@ -339,34 +372,47 @@ mod PipelineTests {
         }
     }
 
-    #[test]
-    fn pipeline_test() {
-        let source_step: Box<PipelineStep<Vec<u8>>> = Box::new(|mut a: Vec<u8>, b: &mut Vec<Vec<u8>>| {
+    pub struct test_step_5 {}
+    impl PipelineStep<Vec<u8>> for test_step_5 {
+        fn run(&mut self, x: Vec<u8>) -> Vec<u8> {
             let mut return_vec = Vec::new();
-            for val in a.iter_mut() {
+            for val in x.iter() {
                 return_vec.push(*val * 2);
             }
 
             //dbg!("{}", &return_vec);
 
             return_vec
-        });
+        }
+    }
 
-        let intermediate_step: Box<PipelineStep<u8>> = Box::new(|a: u8, b: &mut Vec<u8>| {
-            let returny = a + 4;
-            returny
-        });
-        
-        let sink_step: Box<PipelineStep<Vec<u8>>> = Box::new(|mut a: Vec<u8>, b: &mut Vec<Vec<u8>>| {
+    pub struct test_step_6 {}
+    impl PipelineStep<u8> for test_step_6 {
+        fn run(&mut self, x: u8) -> u8 {
+            x + 4
+        }
+    }
+
+    pub struct test_step_7 {}
+    impl PipelineStep<Vec<u8>> for test_step_7 {
+        fn run(&mut self, x: Vec<u8>) -> Vec<u8> {
             let mut return_vec = Vec::new();
-            for val in a.iter_mut() {
+            for val in x.iter() {
                 return_vec.push(*val + 2);
             }
 
-            dbg!("SILLY {}", &return_vec);
-
             return_vec
-        });
+        }
+    }
+
+    #[test]
+    fn pipeline_test() {
+        let source_step: Box<dyn PipelineStep<Vec<u8>>> = Box::new(test_step_5 {});
+
+        let intermediate_step: Box<dyn PipelineStep<u8>> = Box::new(test_step_6 {});
+        
+        let sink_step: Box<dyn PipelineStep<Vec<u8>>> = Box::new(test_step_7 {});
+
         let mut source_node = PipelineNode::new(source_step);
         let mut sink_node = PipelineNode::new(sink_step);
 
@@ -377,7 +423,7 @@ mod PipelineTests {
 
         let mut test_pipeline = BytePipeline::new(10, source_node, sink_node);
 
-        test_pipeline.add_scalar_step(Box::new(intermediate_step), "test_step".to_string());
+        test_pipeline.add_scalar_step(intermediate_step, "test_step".to_string());
         test_pipeline.compose_threads();
         task::block_on(test_pipeline.run());
         

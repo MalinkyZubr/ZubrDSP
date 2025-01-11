@@ -31,12 +31,12 @@ impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
         }
     }
 
-    pub fn add_scalar_step(&mut self, step: Box<PipelineStep<T>>, id: String) {//node: PipelineNode<T>) {
+    pub fn add_scalar_step(&mut self, step: Box<dyn PipelineStep<T>>, id: String) {//node: PipelineNode<T>) {
         let node_enum: PipelineNodeEnum<T> = PipelineNodeEnum::Scalar(PipelineNode::new(step));
         self.node_pool.insert(self.node_pool.len() - 1, (node_enum, id));
     }
 
-    pub fn add_vector_step(&mut self, step: Box<PipelineStep<Vec<T>>>, id: String) {
+    pub fn add_vector_step(&mut self, step: Box<dyn PipelineStep<Vec<T>>>, id: String) {
         let node_enum: PipelineNodeEnum<T> = PipelineNodeEnum::Vector(PipelineNode::new(step));
         self.node_pool.insert(self.node_pool.len() - 1, (node_enum, id));
     }
