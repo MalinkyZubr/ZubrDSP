@@ -1,3 +1,2 @@
-pub mod viterbi;
-pub mod convolutional;
-pub mod tests;
+pub mod turbo;
+pub mod nonsystematic;

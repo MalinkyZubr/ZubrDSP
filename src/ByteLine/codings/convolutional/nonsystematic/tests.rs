@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod ConvolutionalTests {
-    use crate::ByteLine::codings::convolutional::convolutional::{ConvolutionalParams, ConvolutionalParameterError};
+    use crate::ByteLine::codings::convolutional::nonsystematic::params::{ConvolutionalParams, ConvolutionalParameterError};
 
     #[test]
     fn euclidean_test() {

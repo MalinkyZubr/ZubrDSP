@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use super::messages::{Source, Sink};
 
 pub trait PipelineStep<T: Send + 'static> : Send {
-    fn run(&mut self, input: T) -> T;
+    fn run<'a>(&mut self, input: T) -> T;
 }
 
 pub struct PipelineNode<T: Send + Clone + 'static + Debug> {
