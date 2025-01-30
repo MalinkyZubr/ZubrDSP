@@ -10,7 +10,7 @@ struct ConvolutionalEncoderProcessor {
     encoding_lookup: ConvolutionalLookupTable,
 }
 
-impl ConvolutionalInputProcessor<u8> for ConvolutionalEncoderProcessor {
+impl ConvolutionalInputProcessor for ConvolutionalEncoderProcessor {
     fn process(&mut self, stream: u8) -> Option<u8> {
         let (new_context, encoded_output) = self.encoding_lookup.lookup[&self.context][&stream];
                 
@@ -23,13 +23,12 @@ impl ConvolutionalInputProcessor<u8> for ConvolutionalEncoderProcessor {
 }
 
 pub struct ConvolutionalEncoder {
-    consumer: ConvolutionalInputConsumer<u8>,
+    consumer: ConvolutionalInputConsumer,
 }
 
 impl PipelineStep<Vec<u8>> for ConvolutionalEncoder {
     fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
-        self.consumer.reset(input);
-        self.consumer.consume()
+        self.consumer.consume(&input)
     }
 }
 

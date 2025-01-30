@@ -5,19 +5,24 @@ use super::trellis::ConvolutionalLookupTable;
 use super::encoder_io::{ConvolutionalInputProcessor, ConvolutionalOutputByteFactory, ConvolutionalInputConsumer};
 
 
-struct ViterbiProcessor {
-    context: u8,
-    output_factory: ConvolutionalOutputByteFactory,
+pub struct ViterbiProcessor {
+    hamming_distance: u8,
+    params: ConvolutionalParams,// 0 in tuple is the resultant context, 1 is the output encoded
+    //parallelized_decoders: Vec<thread::JoinHandle<()>> // implement this paralellization later. Lets make sure this works at all first!
+    context: (u8, u8, u8),
     decoding_lookup: ConvolutionalLookupTable,
 }
 
-impl ConvolutionalInputProcessor<u8> for ViterbiProcessor {
-    fn process(&mut self, stream: u8) -> Option<u8> {
-        
-    }
-}
-
 impl ViterbiProcessor {
+    pub fn new(params: ConvolutionalParams, decoding_lookup: ConvolutionalLookupTable) -> Self {
+        ViterbiProcessor {
+            hamming_distance: 0,
+            params,
+            decoding_lookup,
+            context: (0, 0, 0),
+        }
+    }
+
     fn next_state(&self, state: u8, received_output: u8) -> (u8, u8, u8) {
         let hashmap = &self.decoding_lookup.lookup[&state];
         let mut min_distance = 10; // more than max hamming distance between 2 u8
@@ -38,59 +43,40 @@ impl ViterbiProcessor {
     }
 }
 
+impl ConvolutionalInputProcessor for ViterbiProcessor {
+    fn process(&mut self, stream: u8) -> Option<u8> { // why not autogenerate the extracted symbol sequence and then send that to each path analyzer? redundant in current state
+        let result = self.next_state(self.context.0, stream);
+        self.context = result;
 
-pub struct ConvolutionalDecoderPath {
-    pub path: Vec<u8>,
-    pub hamming_distance: u8,
+        self.hamming_distance += result.2;
+
+        return Some(result.0);
+    }
 }
 
 pub struct ConvolutionalDecoder {
     params: ConvolutionalParams,// 0 in tuple is the resultant context, 1 is the output encoded
     //parallelized_decoders: Vec<thread::JoinHandle<()>> // implement this paralellization later. Lets make sure this works at all first!
-}
-
-
-impl PipelineStep<Vec<u8>> for ConvolutionalDecoder {
-    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
-        let mut output: Vec<u8> = Vec::new(); // preallocate me later
-
-        
-
-        output
-    }
+    output_factory: ConvolutionalOutputByteFactory,
+    input_consumer: ConvolutionalInputConsumer
 }
 
 impl ConvolutionalDecoder {
-    pub fn new(params: ConvolutionalParams, num_threads: usize, decoder_lookup: ConvolutionalLookupTable) -> ConvolutionalDecoder { // make it so the lookup is generated in here with references and all, etc
+    pub fn new(params: ConvolutionalParams, num_threads: usize, decoding_lookup: ConvolutionalLookupTable) -> ConvolutionalDecoder { // make it so the lookup is generated in here with references and all, etc
         ConvolutionalDecoder {
-            params: params,
-            decoding_lookup: decoder_lookup,
+            output_factory: ConvolutionalOutputByteFactory::new(params.input_bits),
+            params,
+            input_consumer: ConvolutionalInputConsumer::new(Box::new(ViterbiProcessor::new(params.clone(), )))
             //parallelized_decoders: Vec::with_capacity(num_threads),
         }
     }
+}
 
-    fn single_path_match(&mut self, state: u8, input: Vec<u8>) -> ConvolutionalDecoderPath {
-        let mut path = ConvolutionalDecoderPath {path: Vec::new(), hamming_distance: 0};
-        let mut index = 0;
-        let length = input.len();
+impl PipelineStep<Vec<u8>> for ConvolutionalDecoder {
+    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
+        let mut possible_outputs: Vec<ConvolutionalDecoderPath> = Vec::with_capacity(self.decoding_lookup.lookup.len());
+        for state in self.decoding_lookup.lookup.into_keys().iter() {
 
-        while index < length { // transform all fo this into lookup table instead of live calculation
-            let input_byte = input[index];
-            let mut bit_count = 0;
-
-            while bit_count < 8 { // turn this into a separate function. Lazy right now, do later
-                let output_stream = (input_byte >> bit_count) & self.params.read_mask;
-
-                let result = self.next_state(state, output_stream);
-                path.path.push(result.0);
-                path.hamming_distance += result.2;
-
-                bit_count += self.params.input_bits;
-            }
-
-            index += 1;
         }
-
-        path
     }
 }

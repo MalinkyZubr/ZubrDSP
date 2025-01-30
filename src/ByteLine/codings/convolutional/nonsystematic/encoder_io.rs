@@ -47,33 +47,31 @@ impl ConvolutionalOutputByteFactory {
     }
 }
 
-pub trait ConvolutionalInputProcessor<T> {
-    fn process(&mut self, stream: u8) -> Option<T>;
+pub trait ConvolutionalInputProcessor {
+    fn process(&mut self, stream: u8) -> Option<u8>;
 }
 
-pub struct ConvolutionalInputConsumer<T> {
-    input: Vec<u8>,
-    processor: Box<dyn ConvolutionalInputProcessor<T> + Send>,
+pub struct ConvolutionalInputConsumer {
+    processor: Box<dyn ConvolutionalInputProcessor + Send>,
     params: ConvolutionalParams
 }
 
-impl<T> ConvolutionalInputConsumer<T> {
-    pub fn new(processor: Box<dyn ConvolutionalInputProcessor<T> + Send>, params: ConvolutionalParams) -> ConvolutionalInputConsumer<T> {
+impl<T> ConvolutionalInputConsumer {
+    pub fn new(processor: Box<dyn ConvolutionalInputProcessor + Send>, params: ConvolutionalParams) -> ConvolutionalInputConsumer<T> {
         ConvolutionalInputConsumer {
-            input: Vec::new(),
             processor,
             params
         }
     }  
 
-    pub fn consume(&mut self) -> Vec<T> {
+    pub fn consume(&mut self, input: &Vec<u8>) -> Vec<u8> {
         let mut index: usize = 0;
-        let length: usize = self.input.len();
+        let length: usize = input.len();
         let output_size = length * self.params.output_polynomials.len() / 8;
         let mut output: Vec<T> = Vec::with_capacity(output_size);
 
         while index < length {
-            let input_byte = self.input[index];
+            let input_byte = input[index];
             let mut bit_count = 0;
 
             while bit_count < 8 { // turn this into a separate function. Lazy right now, do later
@@ -91,9 +89,5 @@ impl<T> ConvolutionalInputConsumer<T> {
         }
 
         output
-    }
-
-    pub fn reset(&mut self, input: Vec<u8>) {
-        self.input = input;
     }
 }
