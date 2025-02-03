@@ -56,8 +56,8 @@ pub struct ConvolutionalInputConsumer {
     params: ConvolutionalParams
 }
 
-impl<T> ConvolutionalInputConsumer {
-    pub fn new(processor: Box<dyn ConvolutionalInputProcessor + Send>, params: ConvolutionalParams) -> ConvolutionalInputConsumer<T> {
+impl ConvolutionalInputConsumer {
+    pub fn new(processor: Box<dyn ConvolutionalInputProcessor + Send>, params: ConvolutionalParams) -> ConvolutionalInputConsumer {
         ConvolutionalInputConsumer {
             processor,
             params
@@ -68,7 +68,7 @@ impl<T> ConvolutionalInputConsumer {
         let mut index: usize = 0;
         let length: usize = input.len();
         let output_size = length * self.params.output_polynomials.len() / 8;
-        let mut output: Vec<T> = Vec::with_capacity(output_size);
+        let mut output: Vec<u8> = Vec::with_capacity(output_size);
 
         while index < length {
             let input_byte = input[index];
