@@ -30,7 +30,7 @@ impl fmt::Display for ConvolutionalParameterError {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ConvolutionalParams { // basically, more of any of these is better error correction, worse computational performance
     pub context_size: u8, // k
     pub input_bits: u8,
@@ -50,8 +50,8 @@ impl ConvolutionalParams { // need to have 2 wrapper structs that implement the 
         if input_bits > context_size - 1 || input_bits < 1 || (input_bits & (input_bits - 1) != 0) {
             return Err(
                 ConvolutionalParameterError::InputBitError(
-                    "You must pass an input bits size between 1 and 1 
-                    less than context size, inclusive, and must be 2's power (must be 4, 2, or 1)".to_string()
+                    "You must pass an input bits size between 1 and context size -1
+                    , inclusive, and must be 2's power (must be 4, 2, or 1)".to_string()
                 )
             );
         }

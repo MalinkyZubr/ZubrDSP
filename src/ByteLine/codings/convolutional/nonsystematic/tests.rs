@@ -1,6 +1,9 @@
 #[cfg(test)]
 pub mod ConvolutionalTests {
-    use crate::ByteLine::codings::convolutional::nonsystematic::params::{ConvolutionalParams, ConvolutionalParameterError};
+    use crate::ByteLine::codings::convolutional::nonsystematic::{
+        params::{ConvolutionalParams, ConvolutionalParameterError},
+        encoder_io::{ConvolutionalInputConsumer, ConvolutionalOutputByteFactory, ConvolutionalInputProcessor}
+    };
 
     #[test]
     fn euclidean_test() {
@@ -65,14 +68,14 @@ pub mod ConvolutionalTests {
         }
 
         {
-            let test_encoder_5 = ConvolutionalParams::new(5, 3, vec![3]);
+            let test_encoder_5 = ConvolutionalParams::new(5, 4, vec![3]);
             if let Some(ConvolutionalParameterError::OutputPolynomialCountError(_)) = test_encoder_5.err() {
                 assert!(true);
             }
             else {
                 assert!(false);
             }
-            let test_encoder_6 = ConvolutionalParams::new(5, 3, vec![3, 5, 1, 7, 11, 13]);
+            let test_encoder_6 = ConvolutionalParams::new(5, 4, vec![3, 5, 1, 7, 11, 13]);
             if let Some(ConvolutionalParameterError::OutputPolynomialCountError(_)) = test_encoder_6.err() {
                 assert!(true);
             }
@@ -82,7 +85,7 @@ pub mod ConvolutionalTests {
         }
     
         {
-            let test_encoder_7 = ConvolutionalParams::new(5, 3, vec![3, 67]);
+            let test_encoder_7 = ConvolutionalParams::new(5, 4, vec![3, 67]);
             if let Some(ConvolutionalParameterError::OutputPolynomialFmtError(_)) = test_encoder_7.err() {
                 assert!(true);
             }
@@ -92,7 +95,7 @@ pub mod ConvolutionalTests {
         }
 
         {
-            let test_encoder_8 = ConvolutionalParams::new(5, 3, vec![4, 24]);
+            let test_encoder_8 = ConvolutionalParams::new(5, 2, vec![4, 24]);
             if let Some(ConvolutionalParameterError::OutputPolynomialCatastrophicError(_)) = test_encoder_8.as_ref().err() {
                 assert!(true);
             }
@@ -104,7 +107,7 @@ pub mod ConvolutionalTests {
                 assert!(false, "Got error, or ok");
             }
 
-            let test_encoder_8 = ConvolutionalParams::new(5, 3, vec![4, 24, 2]);
+            let test_encoder_8 = ConvolutionalParams::new(5, 2, vec![4, 24, 2]);
             if let Some(ConvolutionalParameterError::OutputPolynomialCatastrophicError(_)) = test_encoder_8.as_ref().err() {
                 assert!(true);
             }
@@ -117,4 +120,28 @@ pub mod ConvolutionalTests {
             }
         }
     }
+
+    #[test]
+    fn encoder_output_factory_test() {
+        let mut output_factory: ConvolutionalOutputByteFactory = ConvolutionalOutputByteFactory::new(2);
+        let input_stream = vec![3, 3, 3, 3];
+
+        for (idx, value) in input_stream.iter().enumerate() {
+            let output = output_factory.append(*value);
+
+            if idx == 3 {
+                dbg!("{}", output.unwrap());
+                assert!(output == Some(255));
+            }
+            else {
+                assert!(output == None);
+            }
+        }
+    }
+
+    #[test]
+    fn encoder_input_consumer_test() {
+        let mut input_consumer = ConvolutionalInputConsumer::new(, ConvolutionalParams::new(8, input_bits, output_polynomials))
+    }
 }
+

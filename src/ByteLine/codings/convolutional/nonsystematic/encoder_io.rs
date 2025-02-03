@@ -6,7 +6,7 @@ pub struct ConvolutionalOutputByteFactory {
     input_length: u8
 }
 
-impl ConvolutionalOutputByteFactory {
+impl ConvolutionalOutputByteFactory { // update me to take params to make shifting only by 2's power
     pub fn new(input_length: u8) -> ConvolutionalOutputByteFactory {
         ConvolutionalOutputByteFactory {
             byte: 0,
