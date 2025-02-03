@@ -26,17 +26,11 @@ struct ViterbiTransfer {
 }
 
 impl ViterbiTransfer {
-    pub fn flush_future_state_tree(&mut self) {
-        for key in self.future_time.keys() {
-            self.future_time[key] = None;
-        }
-    }
-
-    fn identify_best_source(&mut self, input: &u8, future_state: &u8, current_time: HashMap<u8, Option<TrellisRoute>>) -> TrellisRoute { // doing it this way to minimize memory reallocations due to clones
+    fn identify_best_source(&mut self, input: &u8, future_state: &u8, current_time: &HashMap<u8, Option<TrellisRoute>>) -> TrellisRoute { // doing it this way to minimize memory reallocations due to clones
         let mut best_source: u8 = 0;
         let mut best_distance: u8 = 254;
         for (current_state, transition) in self.decoder_lookup.state_transition(*future_state).iter() {
-            match current_time[current_state] {
+            match &current_time[current_state] {
                 Some(route) => {
                     let distance = hamming_distance((*input, transition.output)) + route.hamming_distance;
 
@@ -56,12 +50,15 @@ impl ViterbiTransfer {
     }
 
     pub fn update_routes(&mut self, input: &u8, current_time: HashMap<u8, Option<TrellisRoute>>) -> HashMap<u8, Option<TrellisRoute>> {
-        for future_state in self.future_time.keys() {
-            self.future_time[future_state] = Some(self.identify_best_source(input, future_state, current_time));
+        let keys: Vec<u8> = self.future_time.keys().cloned().collect();
+
+        for future_state in keys {
+            let new_route = Some(self.identify_best_source(input, &future_state, &current_time));
+            self.future_time.insert(future_state, new_route);
         }
 
-        let new_current_time = self.future_time;
-        self.flush_future_state_tree();
+        let new_current_time = self.future_time.clone();
+        self.future_time.clear();
 
         return new_current_time;
     }
@@ -110,23 +107,23 @@ impl ConvolutionalDecoder {
         return re_assembled_input;
     }
 
-    fn get_best_route(&self, final_states: HashMap<u8, Option<TrellisRoute>>) -> &TrellisRoute {
+    fn get_best_route(&self, final_states: HashMap<u8, Option<TrellisRoute>>) -> TrellisRoute {
         let mut best_distance = 254;
-        let mut best_route: &TrellisRoute;
+        let mut best_route: Option<TrellisRoute> = None;
 
         for route in final_states.values() {
             match route {
                 Some(valid_route) => {
                     if valid_route.hamming_distance < best_distance {
                         best_distance = valid_route.hamming_distance;
-                        best_route = &valid_route;
+                        best_route = Some(valid_route.clone());
                     }
                 }
                 None => (),
             };
         };
 
-        return &best_route;
+        return best_route.unwrap();
     }
 
     fn viterbi(&mut self, input: Vec<u8>) -> Vec<u8> {
@@ -135,8 +132,8 @@ impl ConvolutionalDecoder {
             new_states = self.viterbi_transfer.update_routes(output_bitstream, new_states);
         };
 
-        let final_route: &TrellisRoute = self.get_best_route(new_states);
-        return self.trellis_route_to_stream(final_route);
+        let final_route: TrellisRoute = self.get_best_route(new_states);
+        return self.trellis_route_to_stream(&final_route);
     }
 }
 
