@@ -65,7 +65,7 @@ impl ConvolutionalLookupGenerator {
     fn generate_state_changes_encode(state: u8, params: &ConvolutionalParams) -> HashMap<TrellisInput, TrellisStateChangeEncode> {
         let mut state_changes: HashMap<TrellisInput, TrellisStateChangeEncode> = HashMap::new();
         for input in 0..((2 as u8).pow(params.input_bits as u32)) {
-            let new_state = state | input << (params.context_size - params.input_bits);
+            let new_state = (state << params.input_bits) | input;
             state_changes.insert(input, TrellisStateChangeEncode {new_state, output: Self::run_polynomials(new_state, params)});
         };
 

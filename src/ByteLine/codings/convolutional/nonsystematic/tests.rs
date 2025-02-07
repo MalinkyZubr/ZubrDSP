@@ -1,9 +1,17 @@
 #[cfg(test)]
 pub mod ConvolutionalTests {
     use crate::ByteLine::codings::convolutional::nonsystematic::{
-        params::{ConvolutionalParams, ConvolutionalParameterError},
-        encoder_io::{ConvolutionalInputConsumer, ConvolutionalOutputByteFactory, ConvolutionalInputProcessor}
+        encoder_io::{
+            ConvolutionalInputConsumer, ConvolutionalInputProcessor, ConvolutionalOutputByteFactory
+        }, 
+        params::{
+            ConvolutionalParameterError, ConvolutionalParams
+        }, 
+        trellis::{
+            ConvolutionalLookupGenerator, ConvolutionalEncoderLookup, ConvolutionalDecoderLookup, TrellisState, TrellisStateChangeDecode, TrellisStateChangeEncode
+        }
     };
+    use std::collections::HashMap;
 
     #[test]
     fn euclidean_test() {
@@ -218,8 +226,28 @@ pub mod ConvolutionalTests {
             2, 
             1, 
             vec![1, 3]);
-
         
+        let mut test_trellis: crate::ByteLine::codings::convolutional::nonsystematic::trellis::ConvolutionalEncoderLookup = ConvolutionalLookupGenerator::generate_encoding_lookup(&test_params1.unwrap());
+        
+        let reference_lookup: HashMap<u8, HashMap<u8, TrellisStateChangeEncode>> = [
+            (0 as u8, [
+                (0, TrellisStateChangeEncode{new_state: 0, }),
+                (1, TrellisStateChangeEncode{new_state: 0, })
+            ]),
+            (1 as u8, [
+                (0, ),
+                (1, )
+            ]),
+            (2 as u8, [
+                (0, ),
+                (1, )
+            ]),
+            (3 as u8, [
+                (0, ),
+                (1, )
+            ])
+        ].into_iter().collect();
+
     }
 }
 
