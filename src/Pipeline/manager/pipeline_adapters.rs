@@ -7,6 +7,6 @@ pub struct ByteToDSPAdapter {
 }
 
 
-impl<T: SEnd + Clone + 'static + Debug> PipelineNodeGeneric for ByteToDSPAdapter {
+impl<T: Send + Clone + 'static + Debug> PipelineNodeGeneric for ByteToDSPAdapter {
     
 }

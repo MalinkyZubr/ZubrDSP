@@ -56,7 +56,7 @@ pub struct ConvolutionalInputConsumer {
     params: ConvolutionalParams
 }
 
-impl ConvolutionalInputConsumer {
+impl ConvolutionalInputConsumer { // does this account for less than byte size contexts? or does it need to if these are packed?
     pub fn new(processor: Box<dyn ConvolutionalInputProcessor + Send>, params: ConvolutionalParams) -> ConvolutionalInputConsumer {
         ConvolutionalInputConsumer {
             processor,

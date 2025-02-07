@@ -139,9 +139,17 @@ pub mod ConvolutionalTests {
         }
     }
 
+    struct TestProcessor {}
+
+    impl ConvolutionalInputProcessor for TestProcessor {
+        fn process(&mut self, input: u8) -> Option<u8> {
+            return Some(input);
+        }
+    }
+
     #[test]
     fn encoder_input_consumer_test() {
-        let mut input_consumer = ConvolutionalInputConsumer::new(, ConvolutionalParams::new(8, input_bits, output_polynomials))
+        let mut input_consumer = ConvolutionalInputConsumer::new(Box::new(TestProcessor {}), ConvolutionalParams::new(8, 2, vec![3,5]).unwrap());
     }
 }
 

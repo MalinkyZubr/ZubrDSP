@@ -32,7 +32,7 @@ impl ViterbiTransfer {
         for (current_state, transition) in self.decoder_lookup.state_transition(*future_state).iter() {
             match &current_time[current_state] {
                 Some(route) => {
-                    let distance = hamming_distance((*input, transition.output)) + route.hamming_distance;
+                    let distance = hamming_distance((*input, transition.output)) + route.hamming_distance; // precompute hamming distances
 
                     if distance < best_distance {
                         best_source = *current_state;
