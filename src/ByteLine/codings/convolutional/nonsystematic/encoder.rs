@@ -36,7 +36,7 @@ impl ConvolutionalEncoder {
     pub fn new(params: ConvolutionalParams) -> ConvolutionalEncoder {
         let byte_processor = ConvolutionalEncoderProcessor {
             state: 0,
-            output_factory: ConvolutionalOutputByteFactory::new(params.input_bits),
+            output_factory: ConvolutionalOutputByteFactory::new(&params),
             encoding_lookup: ConvolutionalLookupGenerator::generate_encoding_lookup(&params)
         };
 

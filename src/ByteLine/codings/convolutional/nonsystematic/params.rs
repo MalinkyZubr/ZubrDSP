@@ -94,8 +94,8 @@ impl ConvolutionalParams { // need to have 2 wrapper structs that implement the 
     }
 
     fn polynomial_formatting_okay(context_size: &u8, output_polynomials: &u8) -> bool {
-        let two: u8 = 2;
-        return output_polynomials <= &two.pow(*context_size as u32);
+        let two: u16 = 2;
+        return (*output_polynomials as u16) <= two.pow(*context_size as u32);
     }
 
     pub fn gcd_euclidean(values: &Vec<u8>) -> u8{

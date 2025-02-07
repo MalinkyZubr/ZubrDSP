@@ -7,11 +7,11 @@ pub struct ConvolutionalOutputByteFactory {
 }
 
 impl ConvolutionalOutputByteFactory { // update me to take params to make shifting only by 2's power
-    pub fn new(input_length: u8) -> ConvolutionalOutputByteFactory {
+    pub fn new(params: &ConvolutionalParams) -> ConvolutionalOutputByteFactory {
         ConvolutionalOutputByteFactory {
             byte: 0,
             counter: 0,
-            input_length
+            input_length: params.input_bits
         }
     }
 
@@ -74,7 +74,7 @@ impl ConvolutionalInputConsumer { // does this account for less than byte size c
             let input_byte = input[index];
             let mut bit_count = 0;
 
-            while bit_count < 8 { // turn this into a separate function. Lazy right now, do later
+            while bit_count < 8 {
                 let stream = (input_byte >> bit_count) & self.params.read_mask;
 
                 match self.processor.process(stream) {

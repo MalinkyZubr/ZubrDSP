@@ -80,7 +80,7 @@ impl ConvolutionalDecoder {
         
         ConvolutionalDecoder {
             params: params.clone(),
-            output_factory: ConvolutionalOutputByteFactory::new(params.input_bits),
+            output_factory: ConvolutionalOutputByteFactory::new(&params),
             input_consumer: ConvolutionalInputConsumer::new(Box::new(ViterbiProcessor{}), params.clone()), // processor is an asset of the consumer. Should ahve to go through consumer to access processor. So why does this struct maintain ownership? fix
             viterbi_transfer: ViterbiTransfer {future_time: state_tree, decoder_lookup: decoding_lookup}
             //parallelized_decoders: Vec::with_capacity(num_threads),
