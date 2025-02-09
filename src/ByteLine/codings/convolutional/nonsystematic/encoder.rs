@@ -13,7 +13,7 @@ struct ConvolutionalEncoderProcessor {
 impl ConvolutionalInputProcessor for ConvolutionalEncoderProcessor {
     fn process(&mut self, stream: u8) -> Option<u8> {
         let state_change = self.encoding_lookup.state_transition(self.state, stream);
-                
+
         let result = self.output_factory.append(state_change.output);
 
         self.state = state_change.new_state;

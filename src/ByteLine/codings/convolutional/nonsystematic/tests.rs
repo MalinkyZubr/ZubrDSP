@@ -1,9 +1,9 @@
 #[cfg(test)]
 pub mod ConvolutionalTests {
-    use crate::ByteLine::codings::convolutional::nonsystematic::{
-        params::{ConvolutionalParams, ConvolutionalParameterError},
-        encoder_io::{ConvolutionalInputConsumer, ConvolutionalOutputByteFactory, ConvolutionalInputProcessor}
-    };
+    use crate::{ByteLine::codings::convolutional::nonsystematic::{
+        encoder::ConvolutionalEncoder, encoder_io::{ConvolutionalInputConsumer, ConvolutionalInputProcessor, ConvolutionalOutputByteFactory}, params::{ConvolutionalParameterError, ConvolutionalParams}, trellis::{ConvolutionalDecoderLookup, ConvolutionalEncoderLookup, ConvolutionalLookupGenerator, TrellisState, TrellisStateChangeDecode, TrellisStateChangeEncode}, viterbi::ConvolutionalDecoder
+    }, PipelineStep};
+    use std::collections::HashMap;
 
     #[test]
     fn euclidean_test() {
@@ -147,7 +147,7 @@ pub mod ConvolutionalTests {
             let test_params1 = ConvolutionalParams::new(
                 8, 
                 4, 
-                vec![3,5]);
+                vec![3,5, 7, 13]);
             let mut output_factory: ConvolutionalOutputByteFactory = ConvolutionalOutputByteFactory::new(&test_params1.unwrap());
             let input_stream = vec![7,2,4,10];
 
@@ -219,7 +219,107 @@ pub mod ConvolutionalTests {
             1, 
             vec![1, 3]);
 
+        let mut test_trellis: ConvolutionalEncoderLookup = ConvolutionalLookupGenerator::generate_encoding_lookup(&test_params1.unwrap());
+    
+        let mut reference_lookup: HashMap<u8, HashMap<u8, TrellisStateChangeEncode>> = HashMap::new();
+        reference_lookup.insert(0, [
+            (0 as u8, TrellisStateChangeEncode{new_state: 0, output: 0}),
+            (1 as u8, TrellisStateChangeEncode{new_state: 1, output: 3})
+        ].into_iter().collect());
+
+        reference_lookup.insert(1, [
+            (0 as u8, TrellisStateChangeEncode{new_state: 2, output: 2}),
+            (1 as u8, TrellisStateChangeEncode{new_state: 3, output: 1})
+        ].into_iter().collect());
+
+        reference_lookup.insert(2, [
+            (0 as u8, TrellisStateChangeEncode{new_state: 0, output: 0}),
+            (1 as u8, TrellisStateChangeEncode{new_state: 1, output: 3})
+        ].into_iter().collect());
+
+        reference_lookup.insert(3, [
+            (0 as u8, TrellisStateChangeEncode{new_state: 2, output: 2}),
+            (1 as u8, TrellisStateChangeEncode{new_state: 3, output: 1})
+        ].into_iter().collect());
+
+        dbg!("{}", &test_trellis.encoding_lookup);
+        assert!(reference_lookup == test_trellis.encoding_lookup)
+    }
+
+    #[test]
+    fn decoding_trellis_test() {
+        let test_params1 = ConvolutionalParams::new(
+            2, 
+            1, 
+            vec![1, 3]).unwrap();
+
+        let mut test_trellis: ConvolutionalDecoderLookup = ConvolutionalLookupGenerator::generate_decoding_lookup(&test_params1);
         
+        dbg!("{}", &test_params1);
+        let mut reference_lookup: HashMap<u8, HashMap<u8, TrellisStateChangeDecode>> = HashMap::new();
+        reference_lookup.insert(0, [
+            (0 as u8, TrellisStateChangeDecode{output: 0, input: 0}),
+            (2 as u8, TrellisStateChangeDecode{output: 0, input: 0}),
+        ].into_iter().collect());
+
+        reference_lookup.insert(1, [
+            (0 as u8, TrellisStateChangeDecode{output: 3, input: 1}),
+            (2 as u8, TrellisStateChangeDecode{output: 3, input: 1})
+        ].into_iter().collect());
+
+        reference_lookup.insert(2, [
+            (1 as u8, TrellisStateChangeDecode{output:2, input:0}),
+            (3 as u8, TrellisStateChangeDecode{output:2, input:0}),
+        ].into_iter().collect());
+
+        reference_lookup.insert(3, [
+            (1 as u8, TrellisStateChangeDecode{output:1, input:1}),
+            (3 as u8, TrellisStateChangeDecode{output:1, input:1}),
+        ].into_iter().collect());
+
+        dbg!("{}", &test_trellis.decoding_lookup);
+        assert!(reference_lookup == test_trellis.decoding_lookup);
+    }
+
+    #[test]
+    fn encoder_test() {
+        let test_params1 = ConvolutionalParams::new(
+            2, 
+            1, 
+            vec![1, 3]).unwrap();
+
+        let mut test_encoder: ConvolutionalEncoder = ConvolutionalEncoder::new(
+            test_params1.clone()
+        );
+
+        let test_input = vec![0b10101010];
+
+        let expected_output = vec![0b11101100, 0b11101110];
+
+        let true_encoded = test_encoder.run(test_input);
+
+        dbg!("{} vs {}", &expected_output, &true_encoded);
+
+        assert!(expected_output == true_encoded);
+    }
+
+    #[test]
+    fn decoder_test() {
+        let test_params1 = ConvolutionalParams::new(
+            2, 
+            1, 
+            vec![1, 3]).unwrap();
+
+        let mut test_decoder: ConvolutionalDecoder = ConvolutionalDecoder::new(test_params1, 1);
+
+        let encoded = vec![0b11101100, 0b11101110];
+
+        let expected_decoded = vec![0b10101010];
+
+        let true_decoded = test_decoder.run(encoded);
+
+        dbg!("{} vs {}", &expected_decoded, &true_decoded);
+        assert!(expected_decoded == true_decoded);
     }
 }
 
