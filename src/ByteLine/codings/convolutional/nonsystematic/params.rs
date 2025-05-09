@@ -35,7 +35,8 @@ pub struct ConvolutionalParams { // basically, more of any of these is better er
     pub context_size: u8, // k
     pub input_bits: u8,
     pub output_polynomials: Vec<u8>, // len is num output bits. R = input / output
-    pub read_mask: u8
+    pub read_mask: u8,
+    pub max_state_mask: u8,
 }
 
 impl ConvolutionalParams { // need to have 2 wrapper structs that implement the step trait. Most operations held in here for universality
@@ -88,7 +89,8 @@ impl ConvolutionalParams { // need to have 2 wrapper structs that implement the 
                 context_size,
                 input_bits,
                 output_polynomials,
-                read_mask: (2 as u8).pow(input_bits as u32) - 1
+                read_mask: ((2 as u16).pow(input_bits as u32) - 1) as u8,
+                max_state_mask: ((2 as u16).pow(context_size as u32) - 1) as u8
             })
         }
     }

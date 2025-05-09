@@ -11,7 +11,7 @@ impl ConvolutionalOutputByteFactory { // update me to take params to make shifti
         ConvolutionalOutputByteFactory {
             byte: 0,
             counter: 0,
-            input_length: params.input_bits
+            input_length: params.output_polynomials.len() as u8
         }
     }
 

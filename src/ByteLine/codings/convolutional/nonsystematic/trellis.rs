@@ -10,20 +10,20 @@ pub type TrellisInput = u8;
 pub type TrellisOutput = u8;
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct TrellisStateChangeEncode {
     pub new_state: u8,
     pub output: u8
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct TrellisStateChangeDecode {
     pub output: u8,
     pub input: u8,
 }
 
 pub struct ConvolutionalEncoderLookup {
-    encoding_lookup: HashMap<TrellisState, HashMap<TrellisInput, TrellisStateChangeEncode>>,
+    pub encoding_lookup: HashMap<TrellisState, HashMap<TrellisInput, TrellisStateChangeEncode>>,
 }
 
 impl ConvolutionalEncoderLookup {
@@ -33,7 +33,7 @@ impl ConvolutionalEncoderLookup {
 }
 
 pub struct ConvolutionalDecoderLookup {
-    decoding_lookup: HashMap<TrellisState, HashMap<TrellisOutput, TrellisStateChangeDecode>>,
+    pub decoding_lookup: HashMap<TrellisState, HashMap<TrellisState, TrellisStateChangeDecode>>,
 }
 
 impl ConvolutionalDecoderLookup {
@@ -54,7 +54,7 @@ impl ConvolutionalLookupGenerator {
     pub fn generate_encoding_lookup(params: &ConvolutionalParams) -> ConvolutionalEncoderLookup {
         let mut lookup_table: HashMap<TrellisState, HashMap<TrellisInput, TrellisStateChangeEncode>> = HashMap::new();
 
-        for state in 0..((2 as u8).pow(params.context_size as u32)) {
+        for state in 0..(params.max_state_mask + 1) {
             let state_changes = Self::generate_state_changes_encode(state, params);
             lookup_table.insert(state, state_changes);
         };
@@ -64,8 +64,10 @@ impl ConvolutionalLookupGenerator {
 
     fn generate_state_changes_encode(state: u8, params: &ConvolutionalParams) -> HashMap<TrellisInput, TrellisStateChangeEncode> {
         let mut state_changes: HashMap<TrellisInput, TrellisStateChangeEncode> = HashMap::new();
-        for input in 0..((2 as u8).pow(params.input_bits as u32)) {
-            let new_state = (state << params.input_bits) | input;
+        let offset_state = (state << params.input_bits) & params.max_state_mask;
+
+        for input in 0..(params.read_mask + 1) { // do not exclude the max input
+            let new_state = offset_state | input;
             state_changes.insert(input, TrellisStateChangeEncode {new_state, output: Self::run_polynomials(new_state, params)});
         };
 
@@ -84,9 +86,12 @@ impl ConvolutionalLookupGenerator {
 
     fn generate_state_changes_decode(state: u8, params: &ConvolutionalParams) -> HashMap<TrellisState, TrellisStateChangeDecode> {
         let mut state_changes: HashMap<TrellisState, TrellisStateChangeDecode> = HashMap::new();
-        for input in 0..((2 as u8).pow(params.input_bits as u32)) {
-            let old_state = (state << (params.context_size - params.input_bits)) | input;
-            state_changes.insert(input, TrellisStateChangeDecode {input, output: Self::run_polynomials(state, params)});
+        let offset_state = (state >> params.input_bits) & params.max_state_mask;
+
+        for overwritten_input in 0..(params.read_mask + 1) {
+            let old_state = offset_state | (overwritten_input << (params.context_size - params.input_bits));
+            let causal_input = ((old_state  << params.input_bits) & params.max_state_mask) ^ (state & params.max_state_mask);
+            state_changes.insert(old_state, TrellisStateChangeDecode {input: causal_input, output: Self::run_polynomials(state, params)});
         };
 
         state_changes
@@ -95,7 +100,7 @@ impl ConvolutionalLookupGenerator {
     pub fn generate_decoding_lookup(params: &ConvolutionalParams) -> ConvolutionalDecoderLookup {
         let mut lookup_table: HashMap<TrellisState, HashMap<TrellisState, TrellisStateChangeDecode>> = HashMap::new();
 
-        for state in 0..((2 as u8).pow(params.context_size as u32)) {
+        for state in 0..(params.max_state_mask + 1) {
             let state_changes: HashMap<TrellisState, TrellisStateChangeDecode> = Self::generate_state_changes_decode(state, params);
             lookup_table.insert(state, state_changes);
         };
