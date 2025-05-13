@@ -26,7 +26,7 @@ pub struct ConvolutionalEncoder {
     consumer: ConvolutionalInputConsumer,
 }
 
-impl PipelineStep<Vec<u8>> for ConvolutionalEncoder {
+impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalEncoder {
     fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
         self.consumer.consume(&input)
     }

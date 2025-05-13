@@ -147,7 +147,7 @@ impl ConvolutionalDecoder {
     }
 }
 
-impl PipelineStep<Vec<u8>> for ConvolutionalDecoder {
+impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalDecoder {
     fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
         let separated = self.input_consumer.consume(&input);
         self.viterbi(separated)

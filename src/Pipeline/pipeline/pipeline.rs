@@ -20,7 +20,7 @@ pub struct Pipeline<T: Clone + Send + 'static + Debug> {
 }
 
 impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
-    pub fn new(buff_size: usize, source: PipelineNode<Vec<T>>, sink: PipelineNode<Vec<T>>) -> Pipeline<T> {
+    pub fn new(buff_size: usize, source: PipelineNode<Vec<T>, Vec<T>>, sink: PipelineNode<Vec<T>, Vec<T>>) -> Pipeline<T> {
         let node_pool: VecDeque<(PipelineNodeEnum<T>, String)> = VecDeque::from([(PipelineNodeEnum::Vector(source), String::from("Source")), (PipelineNodeEnum::Vector(sink), String::from("Sink"))]);
         Pipeline {
             buff_size,
@@ -31,12 +31,12 @@ impl<T: Clone + Send + 'static + Debug> Pipeline<T> {
         }
     }
 
-    pub fn add_scalar_step(&mut self, step: Box<dyn PipelineStep<T>>, id: String) {//node: PipelineNode<T>) {
+    pub fn add_scalar_step(&mut self, step: Box<dyn PipelineStep<T, T>>, id: String) {//node: PipelineNode<T>) {
         let node_enum: PipelineNodeEnum<T> = PipelineNodeEnum::Scalar(PipelineNode::new(step));
         self.node_pool.insert(self.node_pool.len() - 1, (node_enum, id));
     }
 
-    pub fn add_vector_step(&mut self, step: Box<dyn PipelineStep<Vec<T>>>, id: String) {
+    pub fn add_vector_step(&mut self, step: Box<dyn PipelineStep<Vec<T>, Vec<T>>>, id: String) {
         let node_enum: PipelineNodeEnum<T> = PipelineNodeEnum::Vector(PipelineNode::new(step));
         self.node_pool.insert(self.node_pool.len() - 1, (node_enum, id));
     }

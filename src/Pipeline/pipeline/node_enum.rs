@@ -1,12 +1,12 @@
 use std::fmt::Debug;
 
-use crate::Pipeline::node::buffer::{ScalarToVectorAdapter, VectorToScalarAdapter};
+use crate::Pipeline::node::format_adapter::{ScalarToVectorAdapter, VectorToScalarAdapter};
 use crate::Pipeline::node::prototype::{PipelineNode, PipelineNodeGeneric};
 
 
 pub enum PipelineNodeEnum<T: Send + Clone + 'static + Debug> {
-    Scalar(PipelineNode<T>),
-    Vector(PipelineNode<Vec<T>>),
+    Scalar(PipelineNode<T, T>),
+    Vector(PipelineNode<Vec<T>, Vec<T>>),
     ScalarVectorAdapter(ScalarToVectorAdapter<T>),
     VectorScalarAdapter(VectorToScalarAdapter<T>)
 }

@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::Pipeline::node::prototype::PipelineNode;
 use crate::Pipeline::node::messages::create_node_connection;
-use crate::Pipeline::node::buffer::{ScalarToVectorAdapter, VectorToScalarAdapter};
+use crate::Pipeline::node::format_adapter::{ScalarToVectorAdapter, VectorToScalarAdapter};
 use super::node_enum::PipelineNodeEnum;
 
 
@@ -34,19 +34,19 @@ impl Welder {
         }
     }
 
-    fn weld_scalar<T: Clone + Send + 'static + Debug>(&self, src: &mut PipelineNode<T>, dst: &mut PipelineNode<T>) {
+    fn weld_scalar<T: Clone + Send + 'static + Debug>(&self, src: &mut PipelineNode<T, T>, dst: &mut PipelineNode<T, T>) {
         let (sender, receiver) = create_node_connection::<T>();
         src.set_output(Box::new(sender));
         dst.set_input(Box::new(receiver));
     }
 
-    fn weld_vector<T: Clone + Send + 'static + Debug>(&self, src: &mut PipelineNode<Vec<T>>, dst: &mut PipelineNode<Vec<T>>) {
+    fn weld_vector<T: Clone + Send + 'static + Debug>(&self, src: &mut PipelineNode<Vec<T>, Vec<T>>, dst: &mut PipelineNode<Vec<T>, Vec<T>>) {
         let (sender, receiver) = create_node_connection::<Vec<T>>();
         src.set_output(Box::new(sender));
         dst.set_input(Box::new(receiver));
     }
 
-    fn weld_scalar_to_vector<T: Clone + Send + 'static + Debug>(&self, src: &mut PipelineNode<T>, dst: &mut PipelineNode<Vec<T>>) -> ScalarToVectorAdapter<T> {
+    fn weld_scalar_to_vector<T: Clone + Send + 'static + Debug>(&self, src: &mut PipelineNode<T, T>, dst: &mut PipelineNode<Vec<T>, Vec<T>>) -> ScalarToVectorAdapter<T> {
         let (scalar_sender, scalar_receiver) = create_node_connection::<T>();
         let (vector_sender, vector_receiver) = create_node_connection::<Vec<T>>();
         
@@ -57,7 +57,7 @@ impl Welder {
         return adapter;
     }
 
-    fn weld_vector_to_scalar<T: Clone + Send + 'static + Debug>(&self, src: &mut PipelineNode<Vec<T>>, dst: &mut PipelineNode<T>) -> VectorToScalarAdapter<T> {
+    fn weld_vector_to_scalar<T: Clone + Send + 'static + Debug>(&self, src: &mut PipelineNode<Vec<T>, Vec<T>>, dst: &mut PipelineNode<T, T>) -> VectorToScalarAdapter<T> {
         let (scalar_sender, scalar_receiver) = create_node_connection::<T>();
         let (vector_sender, vector_receiver) = create_node_connection::<Vec<T>>();
         

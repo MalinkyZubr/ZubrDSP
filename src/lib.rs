@@ -1,5 +1,6 @@
 mod Pipeline;
 mod ByteLine;
+mod DSP;
 
 use std::thread;
 use std::time;
@@ -9,17 +10,17 @@ pub use Pipeline::pipeline::pipeline;
 pub use Pipeline::manager::orchestration;
 pub use Pipeline::node::prototype::{PipelineStep, PipelineNodeGeneric, PipelineNode};
 pub use crate::Pipeline::node::messages::{Sink, Source};
-use crate::Pipeline::node::buffer::{ScalarToVectorAdapter, VectorToScalarAdapter};
+use crate::Pipeline::node::format_adapter::{ScalarToVectorAdapter, VectorToScalarAdapter};
 
 
 #[cfg(test)]
 mod NodeTests {
-    use Pipeline::node::{buffer::ScalarToVectorAdapter, messages::create_node_connection, prototype::PipelineNode};
+    use Pipeline::node::{format_adapter::ScalarToVectorAdapter, messages::create_node_connection, prototype::PipelineNode};
 
     use super::*;
 
     pub struct test_step {}
-    impl PipelineStep<u8> for test_step {
+    impl PipelineStep<u8, u8> for test_step {
         fn run(&mut self, a: u8) -> u8 {
             a * 2
         }
@@ -28,8 +29,8 @@ mod NodeTests {
     #[test]
     fn prototype_test() {
         dbg!("TEST!");
-        let test_step: Box<dyn PipelineStep<u8>> = Box::new(test_step{});
-        let mut new_node: PipelineNode<u8> = PipelineNode::new(test_step);
+        let test_step: Box<dyn PipelineStep<u8, u8>> = Box::new(test_step{});
+        let mut new_node: PipelineNode<u8, u8> = PipelineNode::new(test_step);
         let (mut input_send, input_receive) = create_node_connection::<u8>();
         let (output_send, mut output_receive) = create_node_connection::<u8>();
 
@@ -198,7 +199,7 @@ mod ThreadTests {
     }
 
     pub struct test_step_2 {}
-    impl PipelineStep<u8> for test_step_2 {
+    impl PipelineStep<u8, u8> for test_step_2 {
         fn run(&mut self, x: u8) -> u8 {
             x * 2
         }
@@ -206,7 +207,7 @@ mod ThreadTests {
 
     #[test]
     fn thread() {
-        let mut node = PipelineNode::new(Box::new(test_step_2 {}));
+        let mut node: PipelineNode<u8, u8> = PipelineNode::new(Box::new(test_step_2 {}));
 
         let (mut input_send, input_receive) = create_node_connection::<u8>();
         let (output_send, mut output_receive) = create_node_connection::<u8>();
@@ -283,7 +284,7 @@ mod PipelineTests {
     use std::sync::mpsc;
     use std::time::Duration;
     use num::PrimInt;
-    use crate::Pipeline::node::buffer;
+    use crate::Pipeline::node::format_adapter;
     use crate::Pipeline::{
         node::{
             prototype::{PipelineNode, PipelineStep},
@@ -304,14 +305,14 @@ mod PipelineTests {
     use super::*;
 
     pub struct test_step_3 {}
-    impl PipelineStep<u8> for test_step_3 {
+    impl PipelineStep<u8, u8> for test_step_3 {
         fn run(&mut self, x: u8) -> u8 {
             x * 2
         }
     }
 
     pub struct test_step_4 {}
-    impl PipelineStep<u8> for test_step_4 {
+    impl PipelineStep<u8, u8> for test_step_4 {
         fn run(&mut self, x: u8) -> u8 {
             x + 10
         }
@@ -325,12 +326,12 @@ mod PipelineTests {
         let (mut input_send, input_receive) = create_node_connection::<u8>();
         let (output_send, mut output_receive) = create_node_connection::<u8>();
 
-        let test_step_1: Box<dyn PipelineStep<u8>> = Box::new(test_step_3 {});
+        let test_step_1: Box<dyn PipelineStep<u8, u8>> = Box::new(test_step_3 {});
         let mut node_1 = PipelineNode::new(test_step_1);
         node_1.set_input(Box::new(input_receive));
         let mut new_node_1: PipelineNodeEnum<u8> = PipelineNodeEnum::Scalar(node_1);
 
-        let test_step_2: Box<dyn PipelineStep<u8>> = Box::new(test_step_4 {});
+        let test_step_2: Box<dyn PipelineStep<u8, u8>> = Box::new(test_step_4 {});
         let mut node_2 = PipelineNode::new(test_step_2);
         node_2.set_output(Box::new(output_send));
         let mut new_node_2: PipelineNodeEnum<u8> = PipelineNodeEnum::Scalar(node_2);
@@ -373,7 +374,7 @@ mod PipelineTests {
     }
 
     pub struct test_step_5 {}
-    impl PipelineStep<Vec<u8>> for test_step_5 {
+    impl PipelineStep<Vec<u8>, Vec<u8>> for test_step_5 {
         fn run(&mut self, x: Vec<u8>) -> Vec<u8> {
             let mut return_vec = Vec::new();
             for val in x.iter() {
@@ -387,14 +388,14 @@ mod PipelineTests {
     }
 
     pub struct test_step_6 {}
-    impl PipelineStep<u8> for test_step_6 {
+    impl PipelineStep<u8, u8> for test_step_6 {
         fn run(&mut self, x: u8) -> u8 {
             x + 4
         }
     }
 
     pub struct test_step_7 {}
-    impl PipelineStep<Vec<u8>> for test_step_7 {
+    impl PipelineStep<Vec<u8>, Vec<u8>> for test_step_7 {
         fn run(&mut self, x: Vec<u8>) -> Vec<u8> {
             let mut return_vec = Vec::new();
             for val in x.iter() {
@@ -407,11 +408,11 @@ mod PipelineTests {
 
     #[test]
     fn pipeline_test() {
-        let source_step: Box<dyn PipelineStep<Vec<u8>>> = Box::new(test_step_5 {});
+        let source_step: Box<dyn PipelineStep<Vec<u8>, Vec<u8>>> = Box::new(test_step_5 {});
 
-        let intermediate_step: Box<dyn PipelineStep<u8>> = Box::new(test_step_6 {});
+        let intermediate_step: Box<dyn PipelineStep<u8, u8>> = Box::new(test_step_6 {});
         
-        let sink_step: Box<dyn PipelineStep<Vec<u8>>> = Box::new(test_step_7 {});
+        let sink_step: Box<dyn PipelineStep<Vec<u8>, Vec<u8>>> = Box::new(test_step_7 {});
 
         let mut source_node = PipelineNode::new(source_step);
         let mut sink_node = PipelineNode::new(sink_step);
