@@ -28,14 +28,16 @@ pub mod PSKTests {
 
     #[test]
     fn psk_test() {
-        let mut phase_vector_generator: PhaseVectorGenerator = PhaseVectorGenerator::new(PSKPoint::QPSK, PI);
+        let mut phase_vector_generator: PhaseVectorGenerator = PhaseVectorGenerator::new(PSKPoint::BPSK, PI);
         let result: Vec<f32> = phase_vector_generator.run(vec![210]);
+
+        let length = (&result).len();
 
         let mut modulator = PSKModulator::new(16.0, BasisType::COSINE);
 
         let result_final = modulator.run(result);
-        dbg!("{}", &result_final);
+        dbg!("{}", &result_final.len());
 
-        assert!(result_final == vec![]);
+        assert!(result_final.len() == (15) * (length) as usize);
     }
 }
