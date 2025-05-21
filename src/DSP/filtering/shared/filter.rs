@@ -3,8 +3,6 @@
 use std::collections::VecDeque;
 use num::traits::Pow;
 
-use futures::SinkExt;
-
 
 pub enum FilterType {
     LOW_PASS,
@@ -88,7 +86,7 @@ impl IIRFilterRunner {
     }
 
     pub fn run_iir_filter(&mut self, input: Vec<f32>, coefficients: &ZDomainCoefficients) -> Vec<f32> {
-        let mut filter_value = 0.0;
+        let mut filter_value;
         let mut filtered_output: Vec<f32> = Vec::with_capacity(input.len());
 
         for input_point in input.iter() {
