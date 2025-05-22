@@ -1,7 +1,7 @@
 #[cfg(test)]
 pub mod ConvolutionalTests {
     use crate::{ByteLine::codings::convolutional::nonsystematic::{
-        encoder::ConvolutionalEncoder, encoder_io::{ConvolutionalInputConsumer, ConvolutionalInputProcessor, ConvolutionalOutputByteFactory}, params::{ConvolutionalParameterError, ConvolutionalParams}, trellis::{ConvolutionalDecoderLookup, ConvolutionalEncoderLookup, ConvolutionalLookupGenerator, TrellisState, TrellisStateChangeDecode, TrellisStateChangeEncode}, viterbi::ConvolutionalDecoder
+        encoder::ConvolutionalEncoder, encoder_io::{ConvolutionalInputConsumer, ConvolutionalInputProcessor, ConvolutionalOutputByteFactory}, params::{ConvolutionalParameterError, ConvolutionalParams}, trellis::{ConvolutionalEncoderLookup, ConvolutionalLookupGenerator, TrellisState, TrellisStateChangeEncode}, viterbi::{HiddenMarkovModel, ViterbiOpCore}
     }, PipelineStep};
     use std::collections::HashMap;
 
@@ -247,79 +247,32 @@ pub mod ConvolutionalTests {
     }
 
     #[test]
-    fn decoding_trellis_test() {
-        let test_params1 = ConvolutionalParams::new(
-            2, 
-            1, 
-            vec![1, 3]).unwrap();
-
-        let mut test_trellis: ConvolutionalDecoderLookup = ConvolutionalLookupGenerator::generate_decoding_lookup(&test_params1);
-        
-        dbg!("{}", &test_params1);
-        let mut reference_lookup: HashMap<u8, HashMap<u8, TrellisStateChangeDecode>> = HashMap::new();
-        reference_lookup.insert(0, [
-            (0 as u8, TrellisStateChangeDecode{output: 0, input: 0}),
-            (2 as u8, TrellisStateChangeDecode{output: 0, input: 0}),
-        ].into_iter().collect());
-
-        reference_lookup.insert(1, [
-            (0 as u8, TrellisStateChangeDecode{output: 3, input: 1}),
-            (2 as u8, TrellisStateChangeDecode{output: 3, input: 1})
-        ].into_iter().collect());
-
-        reference_lookup.insert(2, [
-            (1 as u8, TrellisStateChangeDecode{output:2, input:0}),
-            (3 as u8, TrellisStateChangeDecode{output:2, input:0}),
-        ].into_iter().collect());
-
-        reference_lookup.insert(3, [
-            (1 as u8, TrellisStateChangeDecode{output:1, input:1}),
-            (3 as u8, TrellisStateChangeDecode{output:1, input:1}),
-        ].into_iter().collect());
-
-        dbg!("{}", &test_trellis.decoding_lookup);
-        assert!(reference_lookup == test_trellis.decoding_lookup);
-    }
-
-    #[test]
-    fn encoder_test() {
-        let test_params1 = ConvolutionalParams::new(
-            2, 
-            1, 
-            vec![1, 3]).unwrap();
-
-        let mut test_encoder: ConvolutionalEncoder = ConvolutionalEncoder::new(
-            test_params1.clone()
+    fn viterbi_test() {
+        let test_HMM: HiddenMarkovModel = HiddenMarkovModel::new(
+            2,
+            3,
+            vec![vec![0.7, 0.3], vec![0.4, 0.6]],
+            vec![vec![0.1, 0.4, 0.5], vec![0.6, 0.3, 0.1]],
+            vec![0.6, 0.4]
         );
 
-        let test_input = vec![0b10101010];
+        let mut test_runner: ViterbiOpCore = ViterbiOpCore::new(2, 3, test_HMM);
 
-        let expected_output = vec![0b11101100, 0b11101110];
+        let result = test_runner.viterbi(&[0, 1, 2]);
 
-        let true_encoded = test_encoder.run(test_input);
+        dbg!("{}", &result);
 
-        dbg!("{} vs {}", &expected_output, &true_encoded);
+        let ideal: Vec<u8> = vec![1, 0, 0];
 
-        assert!(expected_output == true_encoded);
-    }
+        assert!(result.1 == ideal);
+        
+        // let result = test_runner.viterbi(&[0, 1, 2]);
 
-    #[test]
-    fn decoder_test() {
-        let test_params1 = ConvolutionalParams::new(
-            2, 
-            1, 
-            vec![1, 3]).unwrap();
+        // let ideal : Vec<u8> = vec![1, 0, 0];
 
-        let mut test_decoder: ConvolutionalDecoder = ConvolutionalDecoder::new(test_params1, 1);
+        // dbg!("{}", &result);
 
-        let encoded = vec![0b11101100, 0b11101110];
-
-        let expected_decoded = vec![0b10101010];
-
-        let true_decoded = test_decoder.run(encoded);
-
-        dbg!("{} vs {}", &expected_decoded, &true_decoded);
-        assert!(expected_decoded == true_decoded);
+        // assert!(result.1 == ideal);
     }
 }
 

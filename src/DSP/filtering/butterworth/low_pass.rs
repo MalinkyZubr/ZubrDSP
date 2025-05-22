@@ -1,4 +1,4 @@
-use crate::DSP::filtering::{filter::*};
+use crate::DSP::filtering::{shared::filter::*};
 
 
 pub struct ButterworthLowPass {

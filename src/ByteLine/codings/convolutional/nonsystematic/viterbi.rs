@@ -1,156 +1,125 @@
-use std::collections::HashMap;
+use crate::ByteLine::codings::convolutional::nonsystematic::trellis::*;
+use crate::ByteLine::codings::opts::*;
 
-use async_std::task::current;
-
-use crate::ByteLine::codings::opts::hamming_distance;
-use crate::Pipeline::node::prototype::PipelineStep;
 use super::encoder;
-use super::params::ConvolutionalParams;
-use super::trellis::{ConvolutionalDecoderLookup, ConvolutionalLookupGenerator, TrellisStateChangeDecode};
-use super::encoder_io::{ConvolutionalInputProcessor, ConvolutionalOutputByteFactory, ConvolutionalInputConsumer};
 
 
-struct ViterbiProcessor {}
-impl ConvolutionalInputProcessor for ViterbiProcessor {
-    fn process(&mut self, stream: u8) -> Option<u8> { // why not autogenerate the extracted symbol sequence and then send that to each path analyzer? redundant in current state
-        return Some(stream);
+
+
+pub struct HiddenMarkovModel {
+    pub max_state: u8,
+    pub transition_matrix: Vec<Vec<f32>>,
+    pub emission_matrix: Vec<Vec<u8>>,
+    pub start_probabilities: Vec<f32>
+}
+
+
+impl HiddenMarkovModel {
+    pub fn new(max_state: u8, transition_matrix: Vec<Vec<f32>>, emission_matrix: Vec<Vec<u8>>, start_probabilities: Vec<f32>) -> Self {
+        return HiddenMarkovModel { // add some checks here
+            max_state,
+            transition_matrix, 
+            emission_matrix,
+            start_probabilities
+        }
     }
 }
 
-#[derive(Clone, Debug)]
-struct TrellisRoute {
-    pub route: Vec<TrellisStateChangeDecode>,
-    hamming_distance: u8
+
+pub struct ViterbiOpCore {
+    viterbi_matrix: Vec<Vec<f32>>,
+    state_paths: Vec<Vec<u8>>,
+    newpath_buffer: Vec<Vec<u8>>,
+    current_start_probabilities: Vec<f32>,
+    markov_model: HiddenMarkovModel,
+    max_hamming_distance: u8
 }
 
-struct ViterbiTransfer {
-    future_time: HashMap<u8, Option<TrellisRoute>>,
-    decoder_lookup: ConvolutionalDecoderLookup,
-}
+impl ViterbiOpCore {
+    pub fn new(buffer_size: usize, encoder_lookup: &ConvolutionalEncoderLookup) -> Self { // expect unpacked input observations
+        let num_states = encoder_lookup.encoding_lookup.len();
+        let viterbi_matrix: Vec<Vec<f32>> = vec![vec![0.0; num_states]; buffer_size];
 
-impl ViterbiTransfer {
-    fn identify_best_source(&mut self, encoder_output: &u8, future_state: &u8, current_time: &HashMap<u8, Option<TrellisRoute>>) -> TrellisRoute { // doing it this way to minimize memory reallocations due to clones
-        let mut best_source: u8 = 0;
-        let mut best_distance: u8 = 254;
-        for (current_state, transition) in self.decoder_lookup.state_transition(*future_state).iter() {
-            dbg!("{} {} {}", &current_time, &current_state, &transition);
-            match &current_time[current_state] {
-                Some(route) => {
-                    let distance = hamming_distance((*encoder_output, transition.output)) + route.hamming_distance; // precompute hamming distances
+        let mut state_paths: Vec<Vec<u8>> = vec![vec![0; buffer_size]; num_states];
+        let mut newpath_buffer: Vec<Vec<u8>> = vec![vec![0; buffer_size]; num_states];
 
-                    if distance < best_distance {
-                        best_source = *current_state;
-                        best_distance = distance;
+        let mut start_probabilities: Vec<f32> = vec![0.0; num_states];
+        start_probabilities[0] = 1.0;
+
+        let markov_model: HiddenMarkovModel = HiddenMarkovModel::new(num_states as u8, encoder_lookup.to_transition_matrix(), start_probabilities);
+
+        let current_start_probabilities = markov_model.start_probabilities.clone();
+
+        ViterbiOpCore { viterbi_matrix, state_paths, newpath_buffer, current_start_probabilities, markov_model }
+    }
+
+    fn compute_transition_probability(&self, observation: &u8, state: &u8) -> f32 {
+
+    }
+
+    fn compute_time_0_probabilities(&mut self, observations: &[u8]) {
+        for state in 0..self.markov_model.max_state { // initialize start probabilities
+            self.viterbi_matrix[0][state as usize] = self.current_start_probabilities[state as usize] * 
+                self.markov_model.transition_matrix[state][]
+                //self.markov_model.emission_probabilities[state as usize][observations[0] as usize];
+            self.state_paths[state as usize][0] = state;
+        }
+    }
+
+    fn inductive_step(&mut self, observations: &[u8]) {
+        for time_step in 1..observations.len() {
+            for state in 0..self.markov_model.max_state {
+                let mut max_probability: f32 = 0.0;
+                let mut max_state: u8 = 0;
+
+                for state_internal in 0..self.markov_model.max_state { // find the highest probability source for the state at this time
+                    let probability = 
+                        self.viterbi_matrix[time_step - 1][state_internal as usize] * 
+                        self.markov_model.transition_matrix[state_internal as usize][state as usize] * 
+                        self.markov_model.emission_probabilities[state as usize][observations[time_step] as usize];
+
+                    if probability > max_probability {
+                        max_probability = probability;
+                        max_state = state_internal;
                     }
                 }
-                None => (),
-            };
-        }
 
-        let mut best_route = current_time[&best_source].clone().unwrap();
-        best_route.hamming_distance = best_distance;
+                self.viterbi_matrix[time_step][state as usize] = max_probability;
+                let mut temp_path = self.state_paths[max_state as usize].clone();
+                temp_path[time_step] = state;
 
-        return best_route;
-    }
+                self.newpath_buffer[state as usize] = temp_path;
+            }
 
-    pub fn update_routes(&mut self, encoder_output: &u8, current_time: HashMap<u8, Option<TrellisRoute>>) -> HashMap<u8, Option<TrellisRoute>> {
-        let keys: Vec<u8> = self.future_time.keys().cloned().collect();
-
-        for future_state in keys {
-            dbg!("Stuff {}", &future_state);
-            let new_route = Some(self.identify_best_source(encoder_output, &future_state, &current_time));
-            self.future_time.insert(future_state, new_route);
-        }
-
-        let new_current_time = self.future_time.clone();
-        self.future_time.clear();
-
-        return new_current_time;
-    }
-}
-
-pub struct ConvolutionalDecoder {
-    output_factory: ConvolutionalOutputByteFactory,
-    input_consumer: ConvolutionalInputConsumer,
-    params: ConvolutionalParams,
-    viterbi_transfer: ViterbiTransfer,
-    blank_state_tree: HashMap<u8, Option<TrellisRoute>>
-}
-
-impl ConvolutionalDecoder {
-    pub fn new(params: ConvolutionalParams, num_threads: usize) -> ConvolutionalDecoder { // make it so the lookup is generated in here with references and all, etc
-        let decoding_lookup: ConvolutionalDecoderLookup = ConvolutionalLookupGenerator::generate_decoding_lookup(&params);
-        let state_tree: HashMap<u8, Option<TrellisRoute>> = decoding_lookup.generate_state_vec()
-            .into_iter()
-            .map(|key| (key, None))
-            .collect();
-
-        ConvolutionalDecoder {
-            params: params.clone(),
-            output_factory: ConvolutionalOutputByteFactory::new(&params),
-            input_consumer: ConvolutionalInputConsumer::new(Box::new(ViterbiProcessor{}), params.clone()), // processor is an asset of the consumer. Should ahve to go through consumer to access processor. So why does this struct maintain ownership? fix
-            viterbi_transfer: ViterbiTransfer {future_time: state_tree.clone(), decoder_lookup: decoding_lookup},
-            //parallelized_decoders: Vec::with_capacity(num_threads),
-            blank_state_tree: state_tree
+            self.state_paths = self.newpath_buffer.clone();
         }
     }
 
-    fn trellis_route_to_stream(&mut self, input: &TrellisRoute) -> Vec<u8> {
-        let mut re_assembled_input: Vec<u8> = Vec::with_capacity(self.params.input_bits as usize * input.route.len() / 8);
+    fn identify_best_path(&mut self) -> (f32, Vec<u8>) {
+        let final_probabilities = self.viterbi_matrix.iter().last().unwrap();
+        let mut highest_probability_final_state: u8 = 0;
+        let mut highest_final_probability = 0.0;
 
-        for state in input.route.iter() {
-            let byte = self.output_factory.append(state.input);
+        for state in 0..self.markov_model.max_state {
+            if final_probabilities[state as usize] > highest_final_probability {
+                highest_final_probability = final_probabilities[state as usize];
+                highest_probability_final_state = state;
+            }
+        }
 
-            match byte {
-                Some(new_byte) => re_assembled_input.push(new_byte),
-                None => continue,
-            };
-        };
-
-        match self.output_factory.force_complete() {
-            Some(final_byte) => re_assembled_input.push(final_byte),
-            None => (),
-        };
-
-        return re_assembled_input;
+        return (highest_final_probability, self.state_paths[highest_probability_final_state as usize].clone());
     }
 
-    fn get_best_route(&self, final_states: HashMap<u8, Option<TrellisRoute>>) -> TrellisRoute {
-        let mut best_distance = 254;
-        let mut best_route: Option<TrellisRoute> = None;
-
-        for route in final_states.values() {
-            match route {
-                Some(valid_route) => {
-                    if valid_route.hamming_distance < best_distance {
-                        best_distance = valid_route.hamming_distance;
-                        best_route = Some(valid_route.clone());
-                    }
-                }
-                None => (),
-            };
-        };
-
-        return best_route.unwrap();
+    fn update_start_probabilities(&mut self) {
+        self.current_start_probabilities = self.viterbi_matrix.last().unwrap().clone();
     }
 
-    fn viterbi(&mut self, input: Vec<u8>) -> Vec<u8> {
-        let mut new_states: HashMap<u8, Option<TrellisRoute>> = self.blank_state_tree.clone();
-        new_states.insert(0, Some(TrellisRoute {route: vec![TrellisStateChangeDecode {output: 0, input: 0}], hamming_distance: 0}));
-        for output_bitstream in input.iter() {
-            new_states = self.viterbi_transfer.update_routes(output_bitstream, new_states);
-        };
+    pub fn viterbi(&mut self, observations: &[u8]) -> (f32, Vec<u8>) {
+        self.compute_time_0_probabilities(observations);
+        self.inductive_step(observations);
 
-        let mut final_route: TrellisRoute = self.get_best_route(new_states);
-        final_route.route.remove(0); // must get rid of the initial dummy state. the 00 is not included in the output, necessarily
-        return self.trellis_route_to_stream(&final_route);
+        self.update_start_probabilities();
+
+        return self.identify_best_path();
     }
 }
-
-impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalDecoder {
-    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
-        let separated = self.input_consumer.consume(&input);
-        self.viterbi(separated)
-    }
-}
-

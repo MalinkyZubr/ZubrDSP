@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use async_std::task::current;
+use futures::SinkExt;
 
 use super::{encoder, params::ConvolutionalParams};
 use crate::ByteLine::codings::opts::{check_parity};
@@ -16,33 +17,42 @@ pub struct TrellisStateChangeEncode {
     pub output: u8
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct TrellisStateChangeDecode {
-    pub output: u8,
-    pub input: u8,
-}
-
 pub struct ConvolutionalEncoderLookup {
     pub encoding_lookup: HashMap<TrellisState, HashMap<TrellisInput, TrellisStateChangeEncode>>,
+    pub output_size: u8
 }
 
 impl ConvolutionalEncoderLookup {
     pub fn state_transition(&self, current_state: u8, input: u8) -> TrellisStateChangeEncode {
         self.encoding_lookup[&current_state][&input]
     }
-}
 
-pub struct ConvolutionalDecoderLookup {
-    pub decoding_lookup: HashMap<TrellisState, HashMap<TrellisState, TrellisStateChangeDecode>>,
-}
+    pub fn to_transition_matrix(&self) -> Vec<Vec<f32>> {
+        let num_states: u8 = self.encoding_lookup.len() as u8;
+        let mut transition_matrix: Vec<Vec<f32>> = vec![vec![0.0; num_states as usize]; num_states as usize];
 
-impl ConvolutionalDecoderLookup {
-    pub fn state_transition(&self, current_state: u8) -> HashMap<TrellisState, TrellisStateChangeDecode> {
-        self.decoding_lookup[&current_state].clone()
+        for state in 0..num_states {
+            let probability: f32 = 1.0 / self.encoding_lookup[&state].len() as f32;
+
+            for transition in &self.encoding_lookup[&state] {
+                transition_matrix[state as usize][transition.1.new_state as usize] = probability;
+            }
+        };
+
+        return transition_matrix;
     }
 
-    pub fn generate_state_vec(&self) -> Vec<TrellisState> {
-        self.decoding_lookup.keys().cloned().collect()
+    pub fn to_emission_matrix(&self) -> Vec<Vec<u8>> {
+        let num_states: u8 = self.encoding_lookup.len() as u8;
+        let mut emission_matrix: Vec<Vec<u8>> = vec![vec![0; (2 as u64).pow(self.output_size as u32) as usize]; num_states as usize];
+
+        for state in 0..num_states {
+            for transition in &self.encoding_lookup[&state] {
+                emission_matrix[state as usize][transition.1.output as usize] = 1;
+            }
+        };
+
+        return emission_matrix;
     }
 }
 
@@ -59,7 +69,7 @@ impl ConvolutionalLookupGenerator {
             lookup_table.insert(state, state_changes);
         };
 
-        ConvolutionalEncoderLookup {encoding_lookup: lookup_table}
+        ConvolutionalEncoderLookup {encoding_lookup: lookup_table, output_size: params.output_polynomials.len() as u8}
     }
 
     fn generate_state_changes_encode(state: u8, params: &ConvolutionalParams) -> HashMap<TrellisInput, TrellisStateChangeEncode> {
@@ -82,29 +92,5 @@ impl ConvolutionalLookupGenerator {
         }
 
         result
-    }
-
-    fn generate_state_changes_decode(state: u8, params: &ConvolutionalParams) -> HashMap<TrellisState, TrellisStateChangeDecode> {
-        let mut state_changes: HashMap<TrellisState, TrellisStateChangeDecode> = HashMap::new();
-        let offset_state = (state >> params.input_bits) & params.max_state_mask;
-
-        for overwritten_input in 0..(params.read_mask + 1) {
-            let old_state = offset_state | (overwritten_input << (params.context_size - params.input_bits));
-            let causal_input = ((old_state  << params.input_bits) & params.max_state_mask) ^ (state & params.max_state_mask);
-            state_changes.insert(old_state, TrellisStateChangeDecode {input: causal_input, output: Self::run_polynomials(state, params)});
-        };
-
-        state_changes
-    }
-
-    pub fn generate_decoding_lookup(params: &ConvolutionalParams) -> ConvolutionalDecoderLookup {
-        let mut lookup_table: HashMap<TrellisState, HashMap<TrellisState, TrellisStateChangeDecode>> = HashMap::new();
-
-        for state in 0..(params.max_state_mask + 1) {
-            let state_changes: HashMap<TrellisState, TrellisStateChangeDecode> = Self::generate_state_changes_decode(state, params);
-            lookup_table.insert(state, state_changes);
-        };
-
-        ConvolutionalDecoderLookup {decoding_lookup: lookup_table}
     }
 }
