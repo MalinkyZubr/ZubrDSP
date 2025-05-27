@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod validation_tests {
-    use crate::{byte_line::codings::convolutional::nonsystematic::{
+    use crate::{byte_line::codings::convolutional::trellis::{
         params::{ConvolutionalParameterError, ConvolutionalParams}
     }};
 

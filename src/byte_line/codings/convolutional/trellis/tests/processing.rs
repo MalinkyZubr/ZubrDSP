@@ -1,8 +1,8 @@
 #[cfg(test)]
 pub mod convolutional_tests {
-    use crate::{byte_line::codings::convolutional::nonsystematic::{
-        params::{ConvolutionalParams}, trellis::{ConvolutionalEncoderLookup, ConvolutionalLookupGenerator, TrellisStateChangeEncode}, viterbi::{ViterbiOpCore}
-    }};
+    use crate::{byte_line::codings::convolutional::trellis::{
+        params::ConvolutionalParams, reconstruct::ConvolutionalReassembler, trellis::{ConvolutionalEncoderLookup, ConvolutionalLookupGenerator, TrellisStateChangeEncode}, viterbi::ViterbiOpCore
+    }, pipeline::node::prototype::PipelineStep};
     use std::collections::HashMap;
 
     #[test]
@@ -75,15 +75,38 @@ pub mod convolutional_tests {
             vec![1, 3]);
 
         let test_trellis: ConvolutionalEncoderLookup = ConvolutionalLookupGenerator::generate_encoding_lookup(&test_params1.unwrap());
-
+        let mut test_reassembler: ConvolutionalReassembler = ConvolutionalReassembler::new(1); 
         let mut viterbi: ViterbiOpCore = ViterbiOpCore::new(5, &test_trellis);
         let test_output: Vec<u8> = vec![0b00, 0b11, 0b01, 0b10, 0b00];
+        //let test_output: Vec<u8> = vec![0b11, 0b11, 0b00, 0b11, 0b00];
         let valid_state_sequence: Vec<u8> = vec![0b00, 0b01, 0b11, 0b10, 0b00];
+        let valid_input_sequence: Vec<u8> = vec![0, 1, 1, 0, 0];
 
         let result = viterbi.viterbi(&test_output);
 
+        let mut input_sequence = vec![0; result.1.len()];
+        test_reassembler.compute_input_vector(&result.1, &mut input_sequence);
+
         dbg!("{}, {}", &result.0, &result.1);
         assert!(&result.1 == &valid_state_sequence);
+
+        dbg!("{}", &input_sequence);
+        assert!(&input_sequence == &valid_input_sequence);
+
+        let test_output: Vec<u8> = vec![0b11, 0b10, 0b00, 0b00, 0b11];
+        let valid_state_sequence: Vec<u8> = vec![0b01, 0b10, 0b00, 0b00, 0b01];
+        let valid_input_sequence: Vec<u8> = vec![1, 0, 0, 0, 1];
+
+        let result = viterbi.viterbi(&test_output);
+
+        let mut input_sequence = vec![0; result.1.len()];
+        test_reassembler.compute_input_vector(&result.1, &mut input_sequence);
+
+        dbg!("{}, {}", &result.0, &result.1);
+        assert!(&result.1 == &valid_state_sequence);
+
+        dbg!("{}", &input_sequence);
+        assert!(&input_sequence == &valid_input_sequence);
     }
 }
 

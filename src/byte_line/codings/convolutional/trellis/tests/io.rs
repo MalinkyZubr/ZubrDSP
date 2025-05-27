@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod convolutional_encoder_io {
-    use crate::{byte_line::codings::convolutional::nonsystematic::{
+    use crate::{byte_line::codings::convolutional::trellis::{
         encoder_io::{ConvolutionalInputConsumer, ConvolutionalInputProcessor, ConvolutionalOutputByteFactory}, params::{ConvolutionalParams}
     }};
 

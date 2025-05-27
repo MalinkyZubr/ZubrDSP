@@ -1,6 +1,14 @@
-use crate::byte_line::codings::convolutional::nonsystematic::trellis::*;
+use crate::byte_line::codings::convolutional::trellis::trellis::*;
 use crate::byte_line::codings::opts::*;
+use crate::pipeline::node::prototype::PipelineStep;
+
 use std::mem;
+
+
+enum ViterbiState {
+    NotStarted,
+    Standard
+}
 
 
 pub struct HiddenMarkovModel {
@@ -26,15 +34,15 @@ pub struct ViterbiOpCore {
     newpath_buffer: Vec<Vec<u8>>,
     markov_model: HiddenMarkovModel,
     output_size: u8,
-    next_state_swap_vector: Vec<u8>
+    next_state_swap_vector: Vec<u8>,
+    state_machine: ViterbiState
 }
 
 impl ViterbiOpCore {
     pub fn new(buffer_size: usize, encoder_lookup: &ConvolutionalEncoderLookup) -> Self { // expect unpacked input observations
         let output_size = encoder_lookup.output_size;
         let num_states = encoder_lookup.encoding_lookup.len();
-        let mut viterbi_matrix: Vec<Vec<u32>> = vec![vec![0; num_states]; buffer_size + 1];
-        viterbi_matrix[0][0] = output_size as u32;
+        let viterbi_matrix: Vec<Vec<u32>> = vec![vec![0; num_states]; buffer_size];
 
         let state_paths: Vec<Vec<u8>> = vec![vec![0; buffer_size]; num_states];
         let newpath_buffer: Vec<Vec<u8>> = vec![vec![0; buffer_size]; num_states];
@@ -52,7 +60,8 @@ impl ViterbiOpCore {
             newpath_buffer, 
             markov_model, 
             output_size,
-            next_state_swap_vector
+            next_state_swap_vector,
+            state_machine: ViterbiState::NotStarted
         }
     }
 
@@ -62,7 +71,10 @@ impl ViterbiOpCore {
     }
 
     fn get_previous_timestep_similarity(&self, time_step: &usize, state: &usize) -> u32 {
-        return self.viterbi_matrix[time_step - 1][*state];
+        match time_step {
+            0 => self.viterbi_matrix.last().unwrap()[*state],
+            _ => return self.viterbi_matrix[time_step - 1][*state]
+        }
     }
 
     fn identify_maximum_similarity_predecessor(&self, target_state: &usize, time_step: &usize, observations: &[u8]) -> (u32, u8) {
@@ -83,31 +95,41 @@ impl ViterbiOpCore {
         }
 
         return (max_similarity, max_state)
-    }   
+    }  
+
+    fn execute_state_machine(&mut self, time_step: usize, observations: &[u8]) {
+
+        match self.state_machine {
+            ViterbiState::Standard|ViterbiState::Standard => {
+                for target_state in 0..self.markov_model.max_state {
+                    let (max_similarity, max_state) = self.identify_maximum_similarity_predecessor(&(target_state as usize), &time_step, observations);
+                    //dbg!("{}", &max_similarity);
+
+                    self.viterbi_matrix[time_step][target_state as usize] = max_similarity;
+                    // why do we need to make separate paths? because if we change the current path in place, it will corrupt results of others that rely on the orignal path to the given node, but havent been computed yet.
+                    // this is th only way to maintain integrity
+                    //self.next_state_swap_vector[max_state as usize] = target_state;
+                    let mut temp_path = self.state_paths[max_state as usize].clone(); // to get rid of this clone later // getting rid of clone here and having another loop still reduce time complexity because this clone causes n^2 time comp, better to have 2N
+                    // plan: create a separate buffer where the intex of each next state corresponds to the last previous state, allow to index the previous state path easily
+                    // when all final states and indicies are computed, swap the previous state paths with their designated indicies in the newpath
+                    temp_path[time_step] = target_state;
+                    self.newpath_buffer[target_state as usize] = temp_path;
+                }
+            },
+            ViterbiState::NotStarted => {
+                self.viterbi_matrix[0][0] = self.compute_hamming_similarity(&observations[0], &0, &0);
+                self.state_machine = ViterbiState::Standard;
+            }
+        };
+    }
 
     fn inductive_step(&mut self, observations: &[u8]) { // O(N^2 + T) N states, T observations
         // the question is: for every state at each time point, what is the most efficient way to get to that state?
-        for time_step in 1..observations.len() {
-            for target_state in 0..self.markov_model.max_state {
-                let (max_similarity, max_state) = self.identify_maximum_similarity_predecessor(&(target_state as usize), &time_step, observations);
 
-                self.viterbi_matrix[time_step][target_state as usize] = max_similarity;
-                
-                // why do we need to make separate paths? because if we change the current path in place, it will corrupt results of others that rely on the orignal path to the given node, but havent been computed yet.
-                // this is th only way to maintain integrity
-                self.next_state_swap_vector[max_state as usize] = target_state;
-                //let mut temp_path = self.state_paths[max_state as usize].clone(); // to get rid of this clone later // getting rid of clone here and having another loop still reduce time complexity because this clone causes n^2 time comp, better to have 2N
-                // plan: create a separate buffer where the intex of each next state corresponds to the last previous state, allow to index the previous state path easily
-                // when all final states and indicies are computed, swap the previous state paths with their designated indicies in the newpath
-                //temp_path[time_step] = target_state;
+        for time_step in 0..observations.len() {
+            dbg!("{}", &self.viterbi_matrix);
 
-                //self.newpath_buffer[target_state as usize] = temp_path;
-            }
-
-            for (source_state, target_state) in self.next_state_swap_vector.iter().enumerate() {
-                self.state_paths[source_state][time_step] = *target_state;
-                mem::swap(self.state_paths.get_mut(source_state).unwrap(), self.newpath_buffer.get_mut(*target_state as usize).unwrap());
-            }
+            self.execute_state_machine(time_step, observations);
 
             mem::swap(&mut self.state_paths, &mut self.newpath_buffer);
 
@@ -127,6 +149,8 @@ impl ViterbiOpCore {
             }
         }
 
+        dbg!("{}", &self.state_paths);
+
         return (highest_final_similarity, self.state_paths[highest_similarity_final_state as usize].clone());
     }
 
@@ -138,5 +162,11 @@ impl ViterbiOpCore {
         self.viterbi_matrix.swap(0, viterbi_final_element);
 
         return best_path;
+    }
+}
+
+impl PipelineStep<Vec<u8>, Vec<u8>> for ViterbiOpCore {
+    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
+        self.viterbi(&input).1
     }
 }
