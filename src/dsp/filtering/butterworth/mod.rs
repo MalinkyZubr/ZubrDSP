@@ -1,1 +1,1 @@
-pub mod low_pass;
+pub mod butterworth_design;

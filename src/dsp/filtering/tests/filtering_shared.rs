@@ -9,7 +9,7 @@ pub fn is_within_error_bounds(limit_error: f32, actual: f32, expected: f32) -> b
 
 #[cfg(test)]
 pub mod filtering_shared {
-    use crate::dsp::filtering::{shared::filter::*, tests::filtering_shared::is_within_error_bounds, shared::stability_verification::*};
+    use crate::dsp::filtering::{shared::filter::*, tests::filtering_shared::is_within_error_bounds, shared::stability_verification::*, shared::filter_design_utils::*};
     use num::Complex;
 
     #[test]
