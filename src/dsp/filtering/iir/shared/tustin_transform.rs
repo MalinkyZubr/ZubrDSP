@@ -1,14 +1,6 @@
 use num::traits::Pow;
 
 
-pub fn linear_to_db(gain_value: f32) -> f32 {
-    return 20.0 * gain_value.log10();
-}
-
-pub fn db_to_linear(gain_value: f32) -> f32 {
-    return (10.0 as f32).powf(gain_value / 20.0);
-}
-
 pub fn analog_to_digital_frequency(selected_frequency: f32, sample_frequency: f32) -> f32 {
     let sample_period = 1.0 / sample_frequency;
     return (2.0 / sample_period) * (selected_frequency * sample_period / 2.0).atan2(1.0);

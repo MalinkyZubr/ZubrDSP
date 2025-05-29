@@ -63,3 +63,7 @@ fn high_pass_shift(pass_frequency_w: f32, order: u8) -> (Vec<f32>, Vec<f32>) {
 
     return (numerator, denominator);
 }
+
+// fn band_pass_shift(pass_frequency_w: f32, order: u8) -> (Vec<f32>, Vec<f32>) {
+
+// }
