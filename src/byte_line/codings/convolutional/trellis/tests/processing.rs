@@ -52,7 +52,7 @@ pub mod convolutional_tests {
 
         dbg!("{}", &transition_matrix);
         assert!(transition_matrix == vec![
-            vec![0, 3, 0, 0], 
+            vec![1, 1, 0, 0], 
             vec![0, 0, 1, 1], 
             vec![1, 1, 0, 0], 
             vec![0, 0, 1, 1]]);
@@ -60,11 +60,11 @@ pub mod convolutional_tests {
         let emission_matrix = test_trellis.to_emission_matrix();
 
         dbg!("{}", &emission_matrix);
-        assert!(transition_matrix == vec![
-            vec![1, 1, 0, 0], 
-            vec![0, 0, 1, 1], 
-            vec![1, 1, 0, 0], 
-            vec![0, 0, 1, 1]]);
+        assert!(emission_matrix == vec![
+            vec![0, 3, 256, 256], 
+            vec![256, 256, 2, 1], 
+            vec![0, 3, 256, 256], 
+            vec![256, 256, 2, 1]]);
     }
 
     #[test]

@@ -1,0 +1,152 @@
+use num::Complex;
+use rand::rand_core::block;
+use std::f32::consts::{PI};
+use std::collections::HashMap;
+use std::mem;
+
+
+#[derive(Clone, Copy)]
+enum ParityEnum {
+    Even = 0,
+    Odd = 1
+}
+
+pub struct FFTBitReversal { // log_2(n) levels to the n sized fft for radix 2, nlogn total space in the vector
+    bit_reversal_mapping: HashMap<usize, usize>,
+    fft_size: usize,
+    twiddle_factors: HashMap<usize, Vec<Complex<f32>>>,
+    index_bits_needed: usize,
+    parallelism: bool
+}
+
+impl FFTBitReversal {
+    pub fn new(buffer_size: usize, parallelism: bool) -> Self {
+        let index_bits_needed = (buffer_size as f64).log2() as usize;
+        
+        FFTBitReversal { 
+            bit_reversal_mapping: Self::generate_bit_reversal_mapping(buffer_size, index_bits_needed),
+            fft_size: buffer_size,
+            twiddle_factors: Self::compute_twiddle_factors_all(buffer_size),
+            index_bits_needed,
+            parallelism
+        }
+    }
+
+    fn compute_twiddle_factors_all(buffer_size: usize) -> HashMap<usize, Vec<Complex<f32>>> {
+        let mut size: usize = 2;
+        let mut twiddle_factors: HashMap<usize, Vec<Complex<f32>>> = HashMap::new();
+
+        while size <= buffer_size {
+            twiddle_factors.insert(size, Self::compute_twiddle_factors(size));
+            size *= 2;
+        }
+
+        return twiddle_factors
+    }
+
+    fn compute_twiddle_factors(buffer_size: usize) -> Vec<Complex<f32>> {
+        let mut twiddles: Vec<Complex<f32>> = Vec::with_capacity(buffer_size / 2);
+
+        for index in 0..(buffer_size / 2) {
+            let real_comp = (-2.0 * PI * index as f32 / buffer_size as f32).cos();
+            let imag_comp = (-2.0 * PI * index as f32 / buffer_size as f32).sin();
+
+            twiddles.push(Complex::new(real_comp, imag_comp));
+        };
+
+        return twiddles;
+    }
+
+    pub fn get_bit_reversal(value: usize, index_bits_needed: usize) -> usize { // no need for max efficiency since this only happens at the very beginning
+        let string_size: usize = index_bits_needed;
+        let mut reversed: usize = 0;
+
+        for right_side_index in 0..(string_size / 2) {
+            let left_side_index = string_size - 1 - right_side_index;
+            let left_side_value = ((value & (1 << left_side_index)) > 0) as usize;
+            let right_side_value = ((value & (1 << right_side_index)) > 0) as usize;
+
+            reversed |= left_side_value << right_side_index;
+            reversed |= right_side_value << left_side_index;
+        }
+
+        if string_size % 2 == 1 {
+            reversed |= value & (1 << (string_size / 2));
+        }
+
+        return reversed;
+    }
+
+    fn generate_bit_reversal_mapping(buffer_size: usize, index_bits_needed: usize) -> HashMap<usize, usize> {
+        let mut reversal_map: HashMap<usize, usize> = HashMap::new();
+
+        for start_index in 0..buffer_size {
+            let reversed_index = FFTBitReversal::get_bit_reversal(start_index, index_bits_needed);
+
+            if reversed_index != start_index {
+                match reversal_map.get(&reversed_index) {
+                    Some(_value) => {},
+                    None => {reversal_map.insert(start_index, reversed_index); ()}
+                }
+            }
+        }
+
+        return reversal_map;
+    }
+
+    fn bit_reversal_in_place(&self, buffer: &mut [Complex<f32>]) {
+        for first_index in 0..buffer.len() {
+            match self.bit_reversal_mapping.get(&first_index) {
+                None => {},
+                Some(second_index) => {
+                    let temp = buffer[first_index];
+                    buffer[first_index] = buffer[*second_index];
+                    buffer[*second_index] = temp;
+                }
+            }
+        }
+    }
+
+    // fn get_proper_twiddle_factor(&self, j: usize, m: usize) -> Complex<f32> {
+    //     let angle = -2.0 * PI * j as f32 / m as f32;
+    //     Complex::new(0.0, angle).exp()
+    // }
+
+    pub fn compute_fft(&self, buffer: &mut [Complex<f32>]) { // iterative version
+        self.bit_reversal_in_place(buffer);
+
+        for s in 1..self.index_bits_needed + 1 {
+            let m = 1 << s;
+            let mut k = 0;
+
+            while k < self.fft_size {
+                for j in 0..(m / 2) {
+                    let true_index = k + j;
+                    let true_offset_index = true_index + (m / 2);
+
+                    let p = buffer[true_index];
+                    let q = buffer[true_offset_index] * self.twiddle_factors[&m][j];
+                        //self.get_proper_twiddle_factor(j, m);
+
+                    buffer[true_index] = p + q;
+                    buffer[true_offset_index] = p - q;
+                }
+                
+                k += m;
+            }
+        }
+    }
+
+    pub fn compute_ifft(&self, buffer: &mut Vec<Complex<f32>>) {
+        for value in buffer.iter_mut() {
+            *value = value.conj();
+        }
+
+        self.compute_fft(buffer);
+
+        let length = buffer.len();
+        for value in buffer.iter_mut() {
+            *value = *value / length as f32;
+        }
+    }
+}

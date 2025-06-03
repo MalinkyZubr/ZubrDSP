@@ -13,11 +13,38 @@ use crate::pipeline::node::prototype::PipelineStep;
 // all these above characteristics make it better for me (I think) than the usual in place FFT algorithms
 
 // convert all of this to a flat buffer that is mutably sliced. Shared memory region with heap style access
+use num::Complex;
+
 
 #[derive(Clone, Copy)]
 enum ParityEnum {
     Even = 0,
     Odd = 1
+}
+
+struct FFTMemoryBufferRefMap { // log_2(n) levels to the n sized fft for radix 2, nlogn total space in the vector
+    buffer: Vec<Complex<f32>>,
+    buffer_access_slices: Vec<&mut[Complex<f32>], // use these for quick access and modification, caluclations
+    fft_size: usize
+}
+
+impl FFTMemoryBufferRefMap {
+    pub fn new(buffer_size: usize) -> Self {
+        let buffer: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); buffer_size * (buffer_size as f32).log2() as usize];
+        let buffer_access_slices: Vec<&mut[Complex<f32>]> = Vec::with_capacity(buffer_size - 1);
+        
+        FFTMemoryBuffer { buffer: buffer, fft_size: buffer_size, buffer_access_slices }
+    }
+
+    fn bifurcate_computation_buffer()
+
+    pub fn load_real_inputs(&mut self, input_data: &[f32]) {
+
+    }
+
+    pub fn load_imag_inputs(&mut self, input_data: Vec<Complex<f32>>) {
+
+    }
 }
 
 fn generate_input_references<'a>(raw_input: &'a Vec<f32>, input_indicies: &Vec<usize>, parity: ParityEnum) -> (Vec<&'a f32>, Vec<usize>) {
@@ -162,12 +189,10 @@ fn ifft_precompute(input: &mut Vec<f32>) {
 }
 
 pub struct FFTTop {
-    precomputation_function: fn(&mut Vec<f32>),
-    postcomputation_function: fn(&mut Vec<Complex<f32>>),
-    //operator_core: FFTOperation<'a>
+
 }
 
-impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FFTTop {
+impl PipelineStep<Vec<f32>, Vec<Complex<f32>>> for FFTTop {
 
 }
 
