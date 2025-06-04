@@ -1,8 +1,7 @@
 use num::Complex;
-use rand::rand_core::block;
 use std::f32::consts::{PI};
 use std::collections::HashMap;
-use std::mem;
+use crate::general::parallel_computation::ParallelComputation;
 
 
 #[derive(Clone, Copy)]
@@ -11,24 +10,25 @@ enum ParityEnum {
     Odd = 1
 }
 
+
+// static twiddle computation is less time efficient, apparently. Cache really makes a difference
 pub struct FFTBitReversal { // log_2(n) levels to the n sized fft for radix 2, nlogn total space in the vector
     bit_reversal_mapping: HashMap<usize, usize>,
     fft_size: usize,
-    twiddle_factors: HashMap<usize, Vec<Complex<f32>>>,
+    //twiddle_factors: HashMap<usize, Vec<Complex<f32>>>,
     index_bits_needed: usize,
-    parallelism: bool
+    //parallel_unit: Option<ParallelComputation<>>
 }
 
 impl FFTBitReversal {
-    pub fn new(buffer_size: usize, parallelism: bool) -> Self {
+    pub fn new(buffer_size: usize, num_threads: usize) -> Self {
         let index_bits_needed = (buffer_size as f64).log2() as usize;
         
         FFTBitReversal { 
             bit_reversal_mapping: Self::generate_bit_reversal_mapping(buffer_size, index_bits_needed),
             fft_size: buffer_size,
-            twiddle_factors: Self::compute_twiddle_factors_all(buffer_size),
+            //twiddle_factors: Self::compute_twiddle_factors_all(buffer_size),
             index_bits_needed,
-            parallelism
         }
     }
 
@@ -107,32 +107,49 @@ impl FFTBitReversal {
         }
     }
 
-    // fn get_proper_twiddle_factor(&self, j: usize, m: usize) -> Complex<f32> {
-    //     let angle = -2.0 * PI * j as f32 / m as f32;
-    //     Complex::new(0.0, angle).exp()
-    // }
+    fn get_proper_twiddle_factor(&self, compute_index: usize, butterfly_size: usize) -> Complex<f32> {
+        let angle = -2.0 * PI * compute_index as f32 / butterfly_size as f32;
+        Complex::new(0.0, angle).exp()
+    }
+
+    fn compute_single_butterfly(&self, butterfly_size: usize, butterfly_index: usize, buffer: &mut[Complex<f32>]) {
+        for compute_index in 0..(butterfly_size / 2) {
+            let true_index = butterfly_index + compute_index;
+            let true_offset_index = true_index + (butterfly_size / 2);
+
+            let p = buffer[true_index];
+            let q = buffer[true_offset_index] * //self.twiddle_factors[&butterfly_size][compute_index];
+                self.get_proper_twiddle_factor(compute_index, butterfly_size);
+
+            buffer[true_index] = p + q;
+            buffer[true_offset_index] = p - q;
+        }
+    }
 
     pub fn compute_fft(&self, buffer: &mut [Complex<f32>]) { // iterative version
         self.bit_reversal_in_place(buffer);
 
-        for s in 1..self.index_bits_needed + 1 {
-            let m = 1 << s;
-            let mut k = 0;
+        for fft_stage in 1..self.index_bits_needed + 1 {
+            let butterfly_size = 1 << fft_stage;
+            let mut butterfly_index = 0;
 
-            while k < self.fft_size {
-                for j in 0..(m / 2) {
-                    let true_index = k + j;
-                    let true_offset_index = true_index + (m / 2);
-
-                    let p = buffer[true_index];
-                    let q = buffer[true_offset_index] * self.twiddle_factors[&m][j];
-                        //self.get_proper_twiddle_factor(j, m);
-
-                    buffer[true_index] = p + q;
-                    buffer[true_offset_index] = p - q;
-                }
+            while butterfly_index < self.fft_size {
+                self.compute_single_butterfly(butterfly_size, butterfly_index, buffer);
                 
-                k += m;
+                butterfly_index += butterfly_size;
+            }
+        }
+    }
+
+    pub fn compute_fft_parallel(&self, buffer: &mut [Complex<f32>]) {
+        self.bit_reversal_in_place(buffer);
+
+        for fft_stage in 1..self.index_bits_needed + 1 {
+            let butterfly_size = 1 << fft_stage;
+            let mut butterfly_index = 0;
+
+            while butterfly_index < self.fft_size {
+
             }
         }
     }

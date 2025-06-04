@@ -13,7 +13,7 @@ pub mod filtering_shared {
     }
 
     fn test_fft_bit_reversal(input_buffer: &mut Vec<Complex<f32>>, true_f_domain: &Vec<Complex<f32>>) {
-        let mut fft_computer = FFTBitReversal::new(input_buffer.len());
+        let mut fft_computer = FFTBitReversal::new(input_buffer.len(), 5);
 
         let original_buffer = input_buffer.clone();
 
@@ -94,15 +94,17 @@ pub mod filtering_shared {
     #[test]
     fn bench_fft() {
         let mut thing: Vec<Complex<f32>> = vec![];
-        for x in 0..524288 {
+        for x in 0..4096 {
             thing.push(Complex::new(x as f32, x as f32));
         }
-        let mut fft_computer = FFTBitReversal::new(thing.len());
+        let mut fft_computer = FFTBitReversal::new(thing.len(), 5);
 
         let original_buffer = thing.clone();
 
-        fft_computer.compute_fft(&mut thing);
+        for x in 0..100 {
+            fft_computer.compute_fft(&mut thing);
+        }
 
-        assert!(thing == vec![]);
+        //assert!(thing == vec![]);
     }
 }
