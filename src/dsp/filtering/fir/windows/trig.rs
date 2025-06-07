@@ -14,9 +14,9 @@ pub struct RaisedCosineWindow {
 impl RaisedCosineWindow {
     fn new(cosine_type: RaisedCosineType) -> Self {
         let cosine_coefficient = 
-            match RaisedCosineType {
+            match cosine_type {
                 RaisedCosineType::Hann => 0.5,
-                RaisedCosineType::Hamming => (25.0 / 46.0)
+                RaisedCosineType::Hamming => 25.0 / 46.0
             };
 
         return RaisedCosineWindow {cosine_coefficient};
@@ -33,7 +33,7 @@ impl WindowFunction for RaisedCosineWindow {
 pub enum CosineSumType {
     Blackman,
     Nuttall,
-    BlackmanNuttal,
+    BlackmanNuttall,
     BlackmanHarris,
     Flattop,
     SecondPower,
@@ -69,7 +69,7 @@ impl WindowFunction for CosineSumWindow {
         let mut subtract = true;
 
         for (index, coefficient) in self.coefficients.iter().enumerate().skip(0) {
-            let term = coefficient * ((2.0 * index * PI * sample) / window_size).cos();
+            let term = coefficient * ((2.0 * index as f32 * PI * sample) / window_size).cos();
             if subtract {
                 sample_result -= term;
                 subtract = false;
