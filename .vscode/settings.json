@@ -1,5 +1,6 @@
 {
     "files.associations": {
         "t": "cpp"
-    }
+    },
+    "rust-analyzer.cargo.allTargets": false
 }

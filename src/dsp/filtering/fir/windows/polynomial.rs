@@ -12,7 +12,7 @@ impl WindowFunction for RectangularWindow {
 pub struct TriangularWindow {}
 impl WindowFunction for TriangularWindow {
     fn window_function(&self, sample: f32, window_size: f32) -> f32 {
-        return 1.0 - ((sample - (window_size / 2.0)) / (window_size / 2.0));
+        return 1.0 - ((sample - (window_size / 2.0)) / (window_size / 2.0)).abs();
     }
 }
 

@@ -2,6 +2,7 @@
 pub mod bit_reversal_fft {
     use num::Complex;
     use crate::dsp::fft::bit_reversal::FFTBitReversal;
+    use crate::dsp::fft::fftshift::{fft_shift, generate_frequency_axis};
 
     fn verify_not_too_much_error(accepted: &Vec<Complex<f32>>, reality: &Vec<Complex<f32>>) {
         for (accepted, true_value) in accepted.iter().zip(reality) {
@@ -124,5 +125,24 @@ pub mod bit_reversal_fft {
             Complex::new(-4.000000, -9.656854),
         ], 7
     )
+    }
+
+    #[test]
+    fn test_fft_shift() {
+        let mut x: Vec<Complex<f32>> = convert_to_complex(vec![0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0]);
+        
+        fft_shift(&mut x);
+
+        dbg!(&x);
+        assert!(x == convert_to_complex(vec![
+            4.0,5.0,6.0,7.0,0.0,1.0,2.0,3.0
+        ]))
+    }
+
+    #[test]
+    fn test_frequency_axis() {
+        let frequency_axis = generate_frequency_axis(10.0, 10);
+        dbg!(&frequency_axis);
+        assert!(&frequency_axis == &vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, -4.0, -3.0, -2.0, -1.0]);
     }
 }
