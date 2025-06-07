@@ -1,5 +1,6 @@
-use std::{iter::Successors, sync::{Arc, Barrier, Mutex, RwLock, Condvar}, thread, time::Duration};
-use crossbeam::deque::{Injector, Worker, Steal};
+use std::{sync::{Arc, Barrier, RwLock, Condvar}, thread};
+use async_std::io::empty;
+use crossbeam::queue::SegQueue;
 
 
 trait ComputeBounds = Send + Sync + Clone + 'static;
@@ -11,41 +12,65 @@ pub struct ComputeModule<
         TaskReturn: ComputeBounds
     > {
     computation_task: fn(InputParam) -> TaskReturn,
-    postcompute_task: fn(TaskReturn, &mut PostcomputeParam),
-    postcompute_param: PostcomputeParam,
+    postcompute_task: Option<fn(TaskReturn, &mut PostcomputeParam)>,
+    postcompute_param: Option<PostcomputeParam>,
+    executor_func: fn(&mut Self, Arc<SegQueue<InputParam>>, Arc<RwLock<bool>>, Arc<RwLock<bool>>)
 }
 
 impl<
-            InputParam: ComputeBounds,
-            PostcomputeParam: ComputeBounds,
-            TaskReturn: ComputeBounds
-        >  
+        InputParam: ComputeBounds,
+        PostcomputeParam: ComputeBounds,
+        TaskReturn: ComputeBounds
+    >  
     ComputeModule<InputParam, PostcomputeParam, TaskReturn> {
 
-    pub fn new(computation_task: fn(InputParam) -> TaskReturn, postcompute_task: fn(TaskReturn, &mut PostcomputeParam), postcompute_param: PostcomputeParam) -> Self {
-        ComputeModule { computation_task, postcompute_task, postcompute_param }
+    pub fn new(computation_task: fn(InputParam) -> TaskReturn, postcompute_task: Option<fn(TaskReturn, &mut PostcomputeParam)>, postcompute_param: Option<PostcomputeParam>) -> Self {
+        assert!((postcompute_task.is_some() && postcompute_param.is_some()) || (postcompute_task.is_none() && postcompute_param.is_none()));
+
+        let mut executor_func: fn(&mut ComputeModule<InputParam, PostcomputeParam, TaskReturn>, Arc<SegQueue<InputParam>>, Arc<RwLock<bool>>, Arc<RwLock<bool>>) = Self::executor_nwp;
+        if postcompute_task.is_some() && postcompute_param.is_some() {
+            executor_func = Self::executor_wp;
+        }
+
+        ComputeModule { computation_task, postcompute_task, postcompute_param, executor_func}
     }
 
-    pub fn executor(&mut self, task_queue: Arc<Injector<InputParam>>, running: Arc<RwLock<bool>>, is_empty: Arc<Condvar>) {
-        let mut retry_flag = false;
-        while *running.read().unwrap() || retry_flag {
-            match task_queue.steal() {
-                Steal::Empty => { 
-                    retry_flag = false;
-                    is_empty.notify_all();
+    fn executor_wp(compute_module: &mut Self, task_queue: Arc<SegQueue<InputParam>>, running: Arc<RwLock<bool>>, is_empty: Arc<RwLock<bool>>) {
+        while *running.read().unwrap() {
+            match task_queue.pop() {
+                None => { 
+                    *is_empty.write().unwrap() = true;
                 },
-                Steal::Success(value) => {
-                    let result = (self.computation_task)(value);
-                    (self.postcompute_task)(result, &mut self.postcompute_param);
-                    retry_flag = false;
-                },
-                Steal::Retry => retry_flag = true
+                Some(value) => {
+                    *is_empty.write().unwrap() = false;
+                    let result = (compute_module.computation_task)(value);
+                    (compute_module.postcompute_task.unwrap())(result, &mut compute_module.postcompute_param.as_mut().unwrap());
+                }
             }
         }
     }
+
+    pub fn executor_nwp(compute_module: &mut Self, task_queue: Arc<SegQueue<InputParam>>, running: Arc<RwLock<bool>>, is_empty: Arc<RwLock<bool>>) {
+        while *running.read().unwrap() {
+            match task_queue.pop() {
+                None => { 
+                    *is_empty.write().unwrap() = true;
+                },
+                Some(value) => {
+                    *is_empty.write().unwrap() = false;
+                    let _ = (compute_module.computation_task)(value);
+                }
+            }
+        }
+    }
+
+    pub fn executor(&mut self, task_queue: Arc<SegQueue<InputParam>>, running: Arc<RwLock<bool>>, is_empty: Arc<RwLock<bool>>) {
+        (self.executor_func)(self, task_queue, running, is_empty)
+    }
 }
 
-pub struct ParallelComputation<
+pub struct ParallelComputation
+    <
         InputParam: ComputeBounds,
         PostcomputeParam: ComputeBounds,
         TaskReturn: ComputeBounds
@@ -53,8 +78,9 @@ pub struct ParallelComputation<
     thread_pool: Vec<thread::JoinHandle<()>>,
     num_threads: usize,
     running: Arc<RwLock<bool>>,
-    task_queue: Arc<Injector<InputParam>>,
+    task_queue: Arc<SegQueue<InputParam>>,
     compute_module: ComputeModule<InputParam, PostcomputeParam, TaskReturn>,
+    is_empty_vec: Arc<Vec<Arc<RwLock<bool>>>>,
     pub is_empty: Arc<Condvar>
 }
 
@@ -72,9 +98,10 @@ impl<
             thread_pool: Vec::new(), 
             num_threads, 
             running: Arc::new(RwLock::new(false)), 
-            task_queue: Arc::new(Injector::new()), 
+            task_queue: Arc::new(SegQueue::new()), 
             compute_module,
-            is_empty: Arc::new(Condvar::new())
+            is_empty: Arc::new(Condvar::new()),
+            is_empty_vec: Arc::new(vec![Arc::new(RwLock::new(false)); num_threads])
         }
     }
 
@@ -84,29 +111,51 @@ impl<
 
     pub fn start(&mut self) {
         *self.running.write().unwrap() = true;
-        let barrier = Arc::new(Barrier::new(self.num_threads));
 
-        for _thread_num in 0..self.num_threads {
+        for thread_num in 0..self.num_threads {
             let queue = self.task_queue.clone();
             let running = self.running.clone();
             let mut compute_module = self.compute_module.clone();
-            let barrier_clone = barrier.clone();
-            let condvar_clone = self.is_empty.clone();
+
+            let empty_flag_clone = self.is_empty_vec[thread_num].clone();
 
             self.thread_pool.push(
                 thread::spawn(move || {
-                    barrier_clone.wait();
-                    compute_module.executor(queue, running, condvar_clone);
+                    compute_module.executor(queue, running, empty_flag_clone);
                 })
-            )
+            );
         }
+
+        let running = self.running.clone();
+        let cloned_empty_vec = self.is_empty_vec.clone();
+        let is_empty = self.is_empty.clone();
+
+        self.thread_pool.push(
+            thread::spawn(
+                move || {
+                    while *running.read().unwrap() {
+                        thread::sleep(std::time::Duration::from_millis(5));
+                        if cloned_empty_vec.iter().all(|flag| *flag.read().unwrap()) {
+                            is_empty.notify_one();
+                        }
+                    }
+                }
+            )
+            )
     }
 
-    pub fn stop(mut self) {
+    pub fn stop(self) {
         *self.running.write().unwrap() = false;
 
         for thread in self.thread_pool {
             let _ = thread.join();
         };
+    }
+
+    pub fn wait_until_complete(&mut self) {
+        let lock = std::sync::Mutex::new(false);
+        let mut _em = lock.lock().unwrap();
+
+        _em = self.is_empty.wait(_em).unwrap();
     }
 }

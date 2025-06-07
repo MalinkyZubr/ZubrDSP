@@ -10,4 +10,5 @@ num = "0.4.3"
 plotters = "0.3.3"
 rand = "0.9.1"
 crossbeam = "0.8"
+rayon = "1.8"
 

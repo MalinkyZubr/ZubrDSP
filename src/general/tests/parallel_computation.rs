@@ -1,12 +1,18 @@
 pub mod parallel_computation_tester {
+    use crate::general::parallel_computation::{ComputeModule, ParallelComputation};
+    use std::{sync::{Arc, Mutex, RwLock}, time::Duration};
     use rand::Rng;
-
-    use crate::general::parallel_computation::*;
-    use std::{sync::{Arc, Mutex, RwLock}, thread, time::Duration};
+    use std::thread;
 
 
     fn test_op(input: i64) -> i64 {
-        input * 4
+        let mut result = input;
+        for x in 0..1000 {
+            thread::sleep(Duration::from_nanos(10));
+            result += 1;
+        }
+
+        return result;
     }
 
     fn appender(output: i64, output_vec: &mut Arc<RwLock<Vec<i64>>>) {
@@ -15,23 +21,23 @@ pub mod parallel_computation_tester {
 
     #[test]
     pub fn test_parallel_computation() {
-        let mut results: Arc<RwLock<Vec<i64>>> = Arc::new(RwLock::new(Vec::new()));
+        let results: Arc<RwLock<Vec<i64>>> = Arc::new(RwLock::new(Vec::new()));
 
-        let mut test_compute_module: ComputeModule<i64, Arc<RwLock<Vec<i64>>>, i64> = ComputeModule::new(
+        let test_compute_module: ComputeModule<i64, Arc<RwLock<Vec<i64>>>, i64> = ComputeModule::new(
             test_op,
-            appender, 
-            results.clone()
+            Some(appender), 
+            Some(results.clone())
         );
 
         let mut runner = ParallelComputation::new(
-            5, test_compute_module
+            1000, test_compute_module
         );
 
         let mut rnger = rand::rng();
 
         let mut start_vec: Vec<i64> = Vec::new();
 
-        for _index in 0..200000 {
+        for _index in 0..2000 {
             let val = rnger.random_range(0..4000);
             runner.add_task(
                 val
@@ -40,13 +46,10 @@ pub mod parallel_computation_tester {
         }
 
         runner.start();
+        runner.wait_until_complete();
+        runner.stop();
 
-        let mut lock = Mutex::new(false);
-        let mut em = lock.lock().unwrap();
-
-        while !*em {
-            em = runner.is_empty.wait(em).unwrap();
-}
+        //thread::sleep(Duration::from_millis(1000));
 
         //thread::sleep(Duration::from_millis(2000));
 
@@ -54,9 +57,13 @@ pub mod parallel_computation_tester {
 
         //dbg!(&unwrapped_results);
 
-        for value in start_vec {
-            assert!(unwrapped_results.contains(&(value * 4)));
-        }
+        //let mut index = 0;
 
+        for value in start_vec {
+            assert!(unwrapped_results.contains(&(value + 1000)));
+            //index += 1;
+            //dbg!(index);
+        }
     }
 }
+

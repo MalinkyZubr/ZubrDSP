@@ -22,7 +22,7 @@ fn get_normalized_coefficients(order: u8) -> Vec<f32> {
 }
 
 fn nonstandard_frequency_scaling(order: f32, min_attenuation: f32, max_attenuation: f32, pass_frequency_w: f32, stop_frequency_w: f32) -> f32 { // pass, stop
-    let mut scaling_factor: f32 = 1.0;
+    let scaling_factor: f32 = 1.0;
 
     let lower_scaling_limit = pass_frequency_w / 
         (
@@ -45,7 +45,7 @@ fn nonstandard_frequency_scaling(order: f32, min_attenuation: f32, max_attenuati
 
 fn low_pass_shift(pass_frequency_w: f32, order: u8) -> (Vec<f32>, Vec<f32>) { // numerator, denominator
     let mut denominator_coefficients = get_normalized_coefficients(order);
-    let mut numerator_coefficients: Vec<f32> = vec![1.0, 0.0, 0.0];
+    let numerator_coefficients: Vec<f32> = vec![1.0, 0.0, 0.0];
 
     for (index, coefficient) in denominator_coefficients.iter_mut().enumerate() {
         *coefficient = *coefficient / (pass_frequency_w.pow(index as f32));

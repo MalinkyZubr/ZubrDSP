@@ -1,5 +1,5 @@
 #[cfg(test)]
-pub mod filtering_shared {
+pub mod bit_reversal_fft {
     use num::Complex;
     use crate::dsp::fft::bit_reversal::FFTBitReversal;
 
@@ -12,22 +12,22 @@ pub mod filtering_shared {
         }
     }
 
-    fn test_fft_bit_reversal(input_buffer: &mut Vec<Complex<f32>>, true_f_domain: &Vec<Complex<f32>>) {
-        let mut fft_computer = FFTBitReversal::new(input_buffer.len(), 5);
+    fn test_fft_bit_reversal(input_buffer: Vec<Complex<f32>>, true_f_domain: &Vec<Complex<f32>>, threads: usize) {
+        let mut fft_computer = FFTBitReversal::new(input_buffer.len(), threads);
 
         let original_buffer = input_buffer.clone();
 
-        fft_computer.compute_fft(input_buffer);
+        let result = fft_computer.fft(input_buffer);
 
-        dbg!("{}", &input_buffer);
+        dbg!("{}", &result);
 
-        verify_not_too_much_error(&true_f_domain, &input_buffer);
+        verify_not_too_much_error(&true_f_domain, &result);
 
-        fft_computer.compute_ifft(input_buffer);
+        let original = fft_computer.ifft(result);
 
-        dbg!("{}", &input_buffer);
+        dbg!("{}", &original);
 
-        verify_not_too_much_error(&original_buffer, &input_buffer);
+        verify_not_too_much_error(&original_buffer, &original);
     } 
 
     fn convert_to_complex(input: Vec<f32>) -> Vec<Complex<f32>> {
@@ -58,25 +58,25 @@ pub mod filtering_shared {
 
     #[test]
     pub fn test_ffts() {
-        test_fft_bit_reversal(&mut convert_to_complex(
+        test_fft_bit_reversal(convert_to_complex(
             vec![1.0,0.0, 0.0, 0.0]
         ), &mut vec![
             Complex::new(1.0, 0.0),
             Complex::new(1.0, 0.0),
             Complex::new(1.0, 0.0),
             Complex::new(1.0, 0.0),
-        ]
+        ], 1
     );
-        test_fft_bit_reversal(&mut convert_to_complex(
+        test_fft_bit_reversal(convert_to_complex(
             vec![1.0,2.0,3.0,4.0]
         ), &mut vec![
             Complex::new(10.0, 0.0),
             Complex::new(-2.0, 2.0),
             Complex::new(-2.0, 0.0),
             Complex::new(-2.0, -2.0),
-        ]
+        ], 1
     );
-        test_fft_bit_reversal(&mut convert_to_complex(
+        test_fft_bit_reversal(convert_to_complex(
             vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0]
         ), &mut vec![
             Complex::new(36.000000, 0.000000),
@@ -87,24 +87,42 @@ pub mod filtering_shared {
             Complex::new(-4.000000, -1.656854),
             Complex::new(-4.000000, -4.000000),
             Complex::new(-4.000000, -9.656854),
-        ]
+        ], 1
     )
     }
 
     #[test]
-    fn bench_fft() {
-        let mut thing: Vec<Complex<f32>> = vec![];
-        for x in 0..4096 {
-            thing.push(Complex::new(x as f32, x as f32));
-        }
-        let mut fft_computer = FFTBitReversal::new(thing.len(), 5);
-
-        let original_buffer = thing.clone();
-
-        for x in 0..100 {
-            fft_computer.compute_fft(&mut thing);
-        }
-
-        //assert!(thing == vec![]);
+    pub fn test_ffts_parallel() {
+        test_fft_bit_reversal(convert_to_complex(
+            vec![1.0,0.0, 0.0, 0.0]
+        ), &mut vec![
+            Complex::new(1.0, 0.0),
+            Complex::new(1.0, 0.0),
+            Complex::new(1.0, 0.0),
+            Complex::new(1.0, 0.0),
+        ], 3
+    );
+        test_fft_bit_reversal(convert_to_complex(
+            vec![1.0,2.0,3.0,4.0]
+        ), &mut vec![
+            Complex::new(10.0, 0.0),
+            Complex::new(-2.0, 2.0),
+            Complex::new(-2.0, 0.0),
+            Complex::new(-2.0, -2.0),
+        ], 3
+    );
+        test_fft_bit_reversal(convert_to_complex(
+            vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0]
+        ), &mut vec![
+            Complex::new(36.000000, 0.000000),
+            Complex::new(-4.000000, 9.656854),
+            Complex::new(-4.000000, 4.000000),
+            Complex::new(-4.000000, 1.656854),
+            Complex::new(-4.000000, 0.000000),
+            Complex::new(-4.000000, -1.656854),
+            Complex::new(-4.000000, -4.000000),
+            Complex::new(-4.000000, -9.656854),
+        ], 7
+    )
     }
 }

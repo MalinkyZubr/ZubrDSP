@@ -19,7 +19,7 @@ impl ConvolutionalReassembler {
     // assuming bytes are appended to msb
     pub fn compute_input_vector(&self, state_sequence: &[u8], input_sequence: &mut Vec<u8>) {
         for (index, state) in state_sequence.iter().enumerate() {
-            input_sequence[index] = (self.get_input_bitmask & state);
+            input_sequence[index] = self.get_input_bitmask & state;
         }
     }
 }
