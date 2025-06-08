@@ -141,8 +141,12 @@ pub mod bit_reversal_fft {
 
     #[test]
     fn test_frequency_axis() {
-        let frequency_axis = generate_frequency_axis(10.0, 10);
+        let mut frequency_axis = generate_frequency_axis(10.0, 10);
         dbg!(&frequency_axis);
-        assert!(&frequency_axis == &vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, -4.0, -3.0, -2.0, -1.0]);
+        assert!(&frequency_axis == &vec![0.0, 1.0, 2.0, 3.0, 4.0, -5.0, -4.0, -3.0, -2.0, -1.0]);
+        
+        fft_shift(&mut frequency_axis);
+        dbg!(&frequency_axis);
+        assert!(&frequency_axis == &vec![-5., -4., -3., -2., -1.,  0.,  1.,  2.,  3.,  4.]);
     }
 }
