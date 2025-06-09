@@ -19,8 +19,8 @@ impl SidePassRectangular {
         SidePassRectangular {cutoff_frequency, pass_type}
     }
 }
-impl ImpulseResponse for SidePassRectangular {
-    fn impulse_response_f(&self, frequency_buffer: Vec<f32>) -> Vec<Complex<f32>> {
+impl FIRTransferFunction for SidePassRectangular {
+    fn transfer_function(&self, frequency_buffer: Vec<f32>) -> Vec<Complex<f32>> {
         let mut impulse_response = vec![Complex::new(0.0, 0.0); frequency_buffer.len()];
 
         for (index, frequency) in frequency_buffer.iter().enumerate() {
@@ -58,8 +58,8 @@ impl SelectPassRectangular {
         SelectPassRectangular {center_frequency, bandwidth, pass_type}
     }
 }
-impl ImpulseResponse for SelectPassRectangular {
-    fn impulse_response_f(&self, frequency_buffer: Vec<f32>) -> Vec<Complex<f32>> {
+impl FIRTransferFunction for SelectPassRectangular {
+    fn transfer_function(&self, frequency_buffer: Vec<f32>) -> Vec<Complex<f32>> {
         let mut impulse_response = vec![Complex::new(0.0, 0.0); frequency_buffer.len()];
 
         for (index, frequency) in frequency_buffer.iter().enumerate() {

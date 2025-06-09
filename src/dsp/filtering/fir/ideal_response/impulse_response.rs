@@ -2,8 +2,8 @@ use num::Complex;
 use crate::general::validation_functions::percent_error;
 use rand::seq::index::sample;
 
-pub trait ImpulseResponse {
-    fn impulse_response_f(&self, frequency_buffer: Vec<f32>) -> Vec<Complex<f32>>; // Piecewise function defining behavior of the filter. What is y at this frequency x?
+pub trait FIRTransferFunction {
+    fn transfer_function(&self, frequency_buffer: Vec<f32>) -> Vec<Complex<f32>>; // Piecewise function defining behavior of the filter. What is y at this frequency x?
 }
 
 pub fn maximum_frequency(sample_rate: f32) -> f32 {
