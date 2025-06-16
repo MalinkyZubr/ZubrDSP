@@ -1,10 +1,9 @@
 #[cfg(test)]
 pub mod convolutional_tests {
-    use crate::{byte_line::codings::convolutional::trellis::{
+    use crate::byte_line::codings::convolutional::trellis::{
         params::ConvolutionalParams, reconstruct::ConvolutionalReassembler, trellis::{ConvolutionalEncoderLookup, ConvolutionalLookupGenerator, TrellisStateChangeEncode}, viterbi::ViterbiOpCore
-    }, pipeline::node::prototype::PipelineStep};
+    };
     use std::collections::HashMap;
-
     #[test]
     fn encoding_trellis_test() {
         let test_params1 = ConvolutionalParams::new(

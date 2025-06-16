@@ -1,6 +1,6 @@
 use crate::byte_line::codings::convolutional::trellis::trellis::*;
 use crate::byte_line::codings::opts::*;
-use crate::pipeline::node::prototype::PipelineStep;
+use crate::pipeline::prototype::PipelineStep;
 
 use std::mem;
 

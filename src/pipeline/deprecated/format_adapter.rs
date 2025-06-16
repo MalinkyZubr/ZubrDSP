@@ -4,24 +4,14 @@ use std::collections::VecDeque;
 use std::fmt::Debug;
 
 
-pub struct ScalarToVectorAdapter<T: 'static + Send + Debug> {
-    in_receiver: ReceiverWrapper<T>,
-    out_sender: SenderWrapper<Vec<T>>,
-    copy_buffer: VecDeque<T>,
-    // active_buffer: Vec<Complex<f32>>,
-    buff_size: usize,
-    counter: usize,
-}
-
-
-pub struct VectorToScalarAdapter<T: 'static + Send + Debug> {
+pub struct VectorToScalarAdapter<T: Send + Debug> {
     in_receiver: ReceiverWrapper<Vec<T>>,
     out_sender: SenderWrapper<T>,
     buff_size: usize,
 }
 
 
-impl<T: Send + Clone + 'static + Debug> PipelineNodeGeneric for ScalarToVectorAdapter<T> {
+impl<T: Send + Clone + Debug> PipelineNodeGeneric for ScalarToVectorAdapter<T> {
     fn call(&mut self) {
         let in_data: T = self.in_receiver.recv().unwrap();
         self.copy_buffer.push_back(in_data); // dereference for copy
@@ -37,7 +27,7 @@ impl<T: Send + Clone + 'static + Debug> PipelineNodeGeneric for ScalarToVectorAd
 }
 
 
-impl<T: 'static + Send + Debug> ScalarToVectorAdapter<T> {
+impl<T: Send + Debug> ScalarToVectorAdapter<T> {
     pub fn new(in_receiver: ReceiverWrapper<T>, out_sender: SenderWrapper<Vec<T>>,
         // active_buffer: Vec<Complex<f32>>,
         buff_size: usize) -> ScalarToVectorAdapter<T> {
@@ -52,7 +42,7 @@ impl<T: 'static + Send + Debug> ScalarToVectorAdapter<T> {
 }
 
 
-impl<T: Send + 'static + Debug> PipelineNodeGeneric for VectorToScalarAdapter<T> {
+impl<T: Send + Debug> PipelineNodeGeneric for VectorToScalarAdapter<T> {
     fn call(&mut self) {        
         let mut in_data: VecDeque<T> = VecDeque::from(self.in_receiver.recv().unwrap());
         while in_data.len() > 0 {   
@@ -65,7 +55,7 @@ impl<T: Send + 'static + Debug> PipelineNodeGeneric for VectorToScalarAdapter<T>
 }
 
 
-impl<T: 'static + Send + Debug> VectorToScalarAdapter<T> {
+impl<T: Send + Debug> VectorToScalarAdapter<T> {
     pub fn new(in_receiver: ReceiverWrapper<Vec<T>>, out_sender: SenderWrapper<T>, buff_size: usize) -> VectorToScalarAdapter<T> {
         VectorToScalarAdapter {
             in_receiver: in_receiver,

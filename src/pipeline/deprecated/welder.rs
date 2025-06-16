@@ -2,7 +2,6 @@ use std::fmt::Debug;
 
 use crate::pipeline::node::prototype::PipelineNode;
 use crate::pipeline::node::messages::create_node_connection;
-use crate::pipeline::node::format_adapter::{ScalarToVectorAdapter, VectorToScalarAdapter};
 use super::node_enum::PipelineNodeEnum;
 
 

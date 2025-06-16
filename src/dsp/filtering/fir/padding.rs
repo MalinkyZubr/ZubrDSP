@@ -1,5 +1,5 @@
 use num::Complex;
-use crate::pipeline::node::prototype::PipelineStep;
+use crate::pipeline::prototype::PipelineStep;
 
 
 pub struct LinearConvolutionPadder {

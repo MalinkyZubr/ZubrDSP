@@ -5,7 +5,7 @@ use crate::dsp::filtering::fir::ideal_response::impulse_response::FIRTransferFun
 use crate::dsp::filtering::fir::windows::window::{apply_window, WindowFunction};
 use super::ideal_response::*;
 use super::windows::*;
-use crate::pipeline::node::prototype::PipelineStep;
+use crate::pipeline::prototype::PipelineStep;
 
 
 pub struct FirFilter {
@@ -41,8 +41,9 @@ impl FirFilter { // the buffersize for the FIR (num coefficients) need not be eq
 
 
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FirFilter {
-    fn run<'a>(&mut self, mut input: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
+    fn run<'a>(&mut self, mut input: Vec<Complex<f32>>) -> Vec<Complex<f32>> { // assume input is pre-padded
         input.append(&mut vec![Complex::new(0.0, 0.0); self.transfer_function.len() - 1]); // need padding for linear convolution
+        let mut filtered: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); input.len() + self.transfer_function.len() - 1];
         
         for (index, value) in input.iter().enumerate() {
             filtered[index] = value * self.transfer_function[index];

@@ -1,4 +1,4 @@
-use crate::pipeline::node::prototype::PipelineStep;
+use crate::pipeline::prototype::PipelineStep;
 use super::encoder_io::{ConvolutionalOutputByteFactory, ConvolutionalInputConsumer, ConvolutionalInputProcessor};
 use super::trellis::{ConvolutionalEncoderLookup, ConvolutionalLookupGenerator};
 use super::params::ConvolutionalParams;
