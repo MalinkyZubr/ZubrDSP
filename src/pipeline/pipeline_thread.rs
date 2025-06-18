@@ -4,7 +4,7 @@ use std::sync::{Mutex, Arc, RwLock, MutexGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::Instant;
-use super::prototype::{PipelineStep, PipelineNode};
+use super::prototype::{PipelineStep, PipelineNode, CallableNode, Sharable, HasID};
 
 
 pub struct PipelineThread {
@@ -17,8 +17,8 @@ pub struct PipelineThread {
 }
 
 impl PipelineThread {
-    pub fn new<I: Send + Clone + Debug + 'static, O: Send + Clone + Debug + 'static>
-    (step: impl PipelineStep<I, O> + 'static, node: PipelineNode<I, O>) -> PipelineThread { // requires node to be borrowed as static?
+    pub fn new<I: Sharable, O: Sharable>
+    (step: impl PipelineStep<I, O> + 'static, node: impl CallableNode<I, O> + 'static + HasID) -> PipelineThread { // requires node to be borrowed as static?
         let execution_time = Arc::new(AtomicU64::new(0));
         let shared_state = Arc::new(AtomicBool::new(false));
         let kill_flag = Arc::new(AtomicBool::new(false));
@@ -38,9 +38,9 @@ impl PipelineThread {
         return thread;
     }
     
-    fn thread_operation<I: Send + Clone + Debug + 'static, O: Send + Clone + Debug + 'static>
+    fn thread_operation<I: Sharable, O: Sharable>
     (
-        mut step: impl PipelineStep<I, O> + 'static, mut node: PipelineNode<I, O>, 
+        mut step: impl PipelineStep<I, O> + 'static, mut node: impl CallableNode<I, O> + 'static, 
         kill_flag: Arc<AtomicBool>, 
         execution_time_storage: Arc<AtomicU64>, 
         receiver: mpsc::Receiver<()>, 
@@ -60,14 +60,14 @@ impl PipelineThread {
         }
     }
 
-    fn instantiate_thread<I: Send + Clone + Debug + 'static, O: Send + Clone + Debug + 'static>
-    (&mut self, step: impl PipelineStep<I, O> + 'static, node: PipelineNode<I, O>) {
+    fn instantiate_thread<I: Sharable, O: Sharable>
+    (&mut self, step: impl PipelineStep<I, O> + 'static, node: impl CallableNode<I, O> + 'static + HasID) {
             //let state_copy = Arc::new(self.state
             let state_clone = self.state.clone();
             let kill_flag_clone = self.kill_flag.clone();
             let execution_clone = self.execution_time.clone();
             let receiver = self.notify_channel.1.take().unwrap();
-            self.id = node.id.clone();
+            self.id = node.get_id();
 
             self.pipeline_step_thread = Some(
                 thread::spawn(move || {
