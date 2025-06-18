@@ -21,6 +21,12 @@ impl<I: Send + Clone + Debug + 'static, O: Send + Clone + Debug + 'static> Pipel
             id
         }
     }
+
+    pub fn start_pipeline(id: String, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) {
+        let start_node = PipelineNode::new(id);
+        let new_thread = PipelineThread::new(step, start_node);
+        pipeline.nodes.push(new_thread);
+    }
     
     pub fn attach<F: Send + Clone + Debug + 'static>(mut self, id: String, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
         let (sender, receiver) = channel::<O>();
@@ -32,6 +38,11 @@ impl<I: Send + Clone + Debug + 'static, O: Send + Clone + Debug + 'static> Pipel
         pipeline.nodes.push(new_thread);
         
         return successor;
+    }
+
+    pub fn cap_pipeline(self, id: String, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) {
+        let new_thread = PipelineThread::new(step, self);
+        pipeline.nodes.push(new_thread);
     }
 
     pub fn call(&mut self, step: &mut impl PipelineStep<I, O>) {

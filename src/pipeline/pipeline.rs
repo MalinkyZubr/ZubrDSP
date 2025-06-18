@@ -3,6 +3,7 @@
 // type adapters (primarily modulators) are much more important and baked directly into a proper DSP pipeline for radio transmission and reception
 
 use super::pipeline_thread::PipelineThread;
+use super::prototype::PipelineStep;
 
 pub struct RadioPipeline {
     pub nodes: Vec<PipelineThread>
@@ -24,6 +25,15 @@ impl RadioPipeline {
     pub fn kill(&mut self) {
         for node in self.nodes.iter_mut() {
             node.kill();
+        }
+    }
+    
+    pub fn set_pipeline_source<T: Sync + Send>(&mut self, source: impl PipelineStep<T, T> + 'static) {
+        if self.nodes.is_empty() {
+            
+        }
+        else {
+            panic!("Cannot set pipeline source after pipeline has started");
         }
     }
 }
