@@ -2,6 +2,6 @@
 // pub mod welder;
 // pub mod node_enum;
 pub mod pipeline;
-pub mod node_enum;
 pub mod prototype;
 pub mod pipeline_thread;
+pub mod tests;
