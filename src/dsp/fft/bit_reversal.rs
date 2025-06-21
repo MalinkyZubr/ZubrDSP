@@ -6,7 +6,7 @@ use crate::general::parallel_computation::{self, *};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use crate::pipeline::prototype::PipelineStep;
 
-#[derive(Clone, Copy)]
+//#[derive(Clone, Copy)]
 enum ParityEnum {
     Even = 0,
     Odd = 1
