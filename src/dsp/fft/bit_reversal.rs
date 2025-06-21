@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::general::parallel_computation::{self, *};
 use rayon::{ThreadPool, ThreadPoolBuilder};
-
+use crate::pipeline::prototype::PipelineStep;
 
 #[derive(Clone, Copy)]
 enum ParityEnum {
@@ -19,11 +19,12 @@ pub struct FFTBitReversal { // log_2(n) levels to the n sized fft for radix 2, n
     //twiddle_factors: HashMap<usize, Vec<Complex<f32>>>,
     index_bits_needed: usize,
     parallel_unit: ThreadPool,
-    num_threads: usize
+    num_threads: usize,
+    is_ifft: bool
 }
 
 impl FFTBitReversal {
-    pub fn new(buffer_size: usize, num_threads: usize) -> Self {
+    pub fn new(buffer_size: usize, num_threads: usize, is_ifft: bool) -> Self {
         let index_bits_needed = (buffer_size as f64).log2() as usize;
 
         let pool = ThreadPoolBuilder::new().num_threads(num_threads).build().unwrap();
@@ -34,7 +35,8 @@ impl FFTBitReversal {
             //twiddle_factors: Self::compute_twiddle_factors_all(buffer_size),
             index_bits_needed,
             parallel_unit: pool,
-            num_threads
+            num_threads,
+            is_ifft
         }
     }
 
@@ -206,4 +208,17 @@ impl FFTBitReversal {
 
         return buffer;
     }
+}
+
+
+impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FFTBitReversal {    
+    fn run(&mut self, input: Option<Vec<Complex<f32>>>) -> Vec<Complex<f32>> {
+        let mut input = input.unwrap();
+        if self.is_ifft {
+            return self.ifft(input);
+        }
+        else {
+            return self.fft(input);
+        }
+    }   
 }

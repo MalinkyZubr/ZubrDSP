@@ -14,7 +14,7 @@ pub mod bit_reversal_fft {
     }
 
     fn test_fft_bit_reversal(input_buffer: Vec<Complex<f32>>, true_f_domain: &Vec<Complex<f32>>, threads: usize) {
-        let mut fft_computer = FFTBitReversal::new(input_buffer.len(), threads);
+        let mut fft_computer = FFTBitReversal::new(input_buffer.len(), threads, false);
 
         let original_buffer = input_buffer.clone();
 

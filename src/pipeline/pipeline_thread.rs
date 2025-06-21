@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::thread::{self, JoinHandle};
+use std::thread::{self, sleep, JoinHandle};
 use std::sync::{Mutex, Arc, RwLock, MutexGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -12,7 +12,7 @@ pub struct PipelineThread {
     kill_flag: Arc<AtomicBool>,
     execution_time: Arc<AtomicU64>,
     pipeline_step_thread: Option<JoinHandle<()>>,
-    notify_channel: (mpsc::Sender<()>, Option<mpsc::Receiver<()>>),
+    notify_channel: (mpsc::SyncSender<()>, Option<mpsc::Receiver<()>>),
     pub id: String
 }
 
@@ -22,7 +22,7 @@ impl PipelineThread {
         let execution_time = Arc::new(AtomicU64::new(0));
         let shared_state = Arc::new(AtomicBool::new(false));
         let kill_flag = Arc::new(AtomicBool::new(false));
-        let notify_channel = mpsc::channel();
+        let notify_channel = mpsc::sync_channel(1);
 
         let mut thread = PipelineThread {
             state: shared_state,
@@ -46,16 +46,17 @@ impl PipelineThread {
         receiver: mpsc::Receiver<()>, 
         state: Arc<AtomicBool>) 
     {
-        while !kill_flag.load(Ordering::Relaxed) {
-            let _ = receiver.recv();;
-            
-            while state.load(Ordering::Relaxed) {
-                let start_time = Instant::now();
+        while !kill_flag.load(Ordering::Acquire) {
+            let _ = receiver.recv_timeout(std::time::Duration::from_millis(1000));
+            //dbg!("BULLSHIT!");
 
+            while state.load(Ordering::Acquire) {
+                //dbg!("I SHIT WHERE I EAT");
+                let start_time = Instant::now();
                 node.call(&mut step);
 
                 let execution_time = start_time.elapsed().as_millis() as u64;
-                execution_time_storage.store(execution_time, Ordering::Relaxed);
+                execution_time_storage.store(execution_time, Ordering::SeqCst);
             }
         }
     }
@@ -84,20 +85,31 @@ impl PipelineThread {
     }
 
     pub fn start(&mut self) {
-        self.state.store(true, Ordering::SeqCst);
-        self.notify_channel.0.send(()).unwrap();
+        self.state.store(true, Ordering::Release);
+        _ = self.notify_channel.0.send(());
+        sleep(std::time::Duration::from_millis(10));
+        //dbg!("STARTED");
     }
 
     pub fn stop(&mut self) {
-        self.state.store(false, Ordering::SeqCst);
+        self.state.store(false, Ordering::Release);
+        _ = self.notify_channel.0.send(());
+        sleep(std::time::Duration::from_millis(10));
     }
 
     pub fn kill(&mut self) {
         match self.pipeline_step_thread.take() {
             Some(step_thread) => {
-                self.state.store(false, Ordering::SeqCst);
-                self.kill_flag.store(true, Ordering::SeqCst);
-                step_thread.join().unwrap();
+                self.state.store(false, Ordering::Release);
+                self.kill_flag.store(true, Ordering::Release);
+                
+                sleep(std::time::Duration::from_millis(10));
+
+                _ = self.notify_channel.0.send(());
+
+                //println!("killing thread {}", self.id);
+                _ = step_thread.join();
+                //println!("thread {} killed", self.id);
             },
             None => {
                 panic!("no thread is running!");

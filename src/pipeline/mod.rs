@@ -5,3 +5,7 @@ pub mod pipeline;
 pub mod prototype;
 pub mod pipeline_thread;
 pub mod tests;
+mod endpoints;
+mod sources;
+//mod dummy;
+//mod curses;

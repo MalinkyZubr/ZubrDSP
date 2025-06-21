@@ -3,37 +3,44 @@
 // type adapters (primarily modulators) are much more important and baked directly into a proper DSP pipeline for radio transmission and reception
 
 use super::pipeline_thread::PipelineThread;
-use super::prototype::PipelineStep;
+use super::prototype::{PipelineStep, PipelineNode, Unit};
+//use super::dummy::{dummy_thread_function, DummyManager, DummyRunner};
+use std::thread::{self, JoinHandle};
+use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 
 pub struct RadioPipeline {
-    pub nodes: Vec<PipelineThread>
+    pub nodes: Vec<PipelineThread>,
+    //dummy_manager: DummyManager
+    
 }
 impl RadioPipeline {
-    pub fn new() -> RadioPipeline {RadioPipeline{nodes: Vec::new()}}
+    pub fn new() -> RadioPipeline {
+        RadioPipeline{
+            nodes: Vec::new(), 
+            //dummy_manager: DummyManager::new()
+        }
+    }
+    
     pub fn start(&mut self) {
+        //self.dummy_manager.start();
         for node in self.nodes.iter_mut() {
             node.start();
         }
     }
     
     pub fn stop(&mut self) {
+        //self.dummy_manager.stop();
         for node in self.nodes.iter_mut() {
             node.stop();
         }
     }
     
-    pub fn kill(&mut self) {
-        for node in self.nodes.iter_mut() {
+    pub fn kill(self) {
+        for mut node in self.nodes {
             node.kill();
-        }
-    }
-    
-    pub fn set_pipeline_source<T: Sync + Send>(&mut self, source: impl PipelineStep<T, T> + 'static) {
-        if self.nodes.is_empty() {
-            
-        }
-        else {
-            panic!("Cannot set pipeline source after pipeline has started");
         }
     }
 }

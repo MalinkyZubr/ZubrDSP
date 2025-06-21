@@ -13,7 +13,7 @@ pub struct FirFilter {
 }
 impl FirFilter { // the buffersize for the FIR (num coefficients) need not be equal to the input buffer, must be just less than or equal to
     pub fn new<T: WindowFunction>(fir_transfer_function: Box<dyn FIRTransferFunction>, window: T, frequency_spectrum: Vec<f32>, fft_shifted: bool, input_buffer_size: usize) -> Self {
-        let mut fft_unit = FFTBitReversal::new(frequency_spectrum.len(), 1);
+        let mut fft_unit = FFTBitReversal::new(frequency_spectrum.len(), 1, false);
         
         let mut ideal_transfer_function = fir_transfer_function.transfer_function(frequency_spectrum);
         let ideal_impulse_response = Self::extract_impulse_response(ideal_transfer_function, fft_shifted, &mut fft_unit);
@@ -41,7 +41,8 @@ impl FirFilter { // the buffersize for the FIR (num coefficients) need not be eq
 
 
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FirFilter {
-    fn run<'a>(&mut self, mut input: Vec<Complex<f32>>) -> Vec<Complex<f32>> { // assume input is pre-padded
+    fn run<'a>(&mut self, input: Option<Vec<Complex<f32>>>) -> Vec<Complex<f32>> { // assume input is pre-padded
+        let mut input = input.unwrap();
         input.append(&mut vec![Complex::new(0.0, 0.0); self.transfer_function.len() - 1]); // need padding for linear convolution
         let mut filtered: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); input.len() + self.transfer_function.len() - 1];
         

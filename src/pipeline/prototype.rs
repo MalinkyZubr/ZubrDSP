@@ -1,20 +1,68 @@
 use std::fmt::Debug;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc;
+use std::sync::mpsc::{channel, Receiver, Sender, RecvError, SendError, SyncSender, RecvTimeoutError};
 use crate::pipeline::pipeline::RadioPipeline;
 use super::pipeline_thread::PipelineThread;
 
 
-pub trait Sharable = Send + Sync + Debug + 'static;
-pub trait NotUnit {}
-impl !NotUnit for () {}
+pub trait Source {}
+pub trait Sink {}
 
+pub trait Sharable = Send + Sync + Debug + 'static;
+pub trait Unit: Send + Clone {
+    fn gen() -> Self;
+}
+impl Unit for () {
+    fn gen() -> Self {
+        ()
+    }
+}
+
+pub enum PipelineError {
+    SendError,
+    ReceiveError,
+    Ok
+}
+
+enum RealSender<T: Sharable> {
+    Real(SyncSender<T>),
+    Dummy
+}
+impl<T: Sharable> RealSender<T> {
+    pub fn send(&mut self, data: T) -> Result<(), SendError<T>> {
+        match self {
+            RealSender::Real(sender) => sender.send(data),
+            RealSender::Dummy => Result::Ok(())
+        }
+    }
+}
+
+enum RealReceiver<T: Sharable> {
+    Real(Receiver<T>),
+    Dummy
+}
+impl<T: Sharable> RealReceiver<T> {
+    pub fn recv(&mut self) -> (Result<T, RecvError>, bool) {
+        match self {
+            RealReceiver::Real(receiver) => (receiver.recv(), true),
+            RealReceiver::Dummy => (Result::Err(RecvError), false)
+        }
+    }
+
+    pub fn recv_timeout(&mut self, timeout: core::time::Duration) -> (Result<T, RecvTimeoutError>, bool) {
+        match self {
+            RealReceiver::Real(receiver) => (receiver.recv_timeout(timeout), true),
+            RealReceiver::Dummy => (Result::Err(RecvTimeoutError::Timeout), false)
+        }
+    }
+}
 
 pub trait PipelineStep<I: Send, O: Send> : Send {
-    fn run(&mut self, input: I) -> O;
+    fn run(&mut self, input: Option<I>) -> O;
 }
 
 pub trait CallableNode<I: Sharable, O: Sharable> : Send {
-    fn call(&mut self, step: &mut impl PipelineStep<I, O>);
+    fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineError;
 } 
 
 pub trait HasID {
@@ -23,8 +71,8 @@ pub trait HasID {
 }
 
 pub struct PipelineNode<I: Sharable, O: Sharable> {
-    pub input: Option<Receiver<I>>,
-    pub output: Option<Sender<O>>,
+    pub input: RealReceiver<I>,
+    pub output: RealSender<O>,
     pub id: String
 }
 
@@ -38,93 +86,130 @@ impl<I: Sharable, O: Sharable> HasID for PipelineNode<I, O> {
     }
 }
 
-pub mod PipelineSource {
-    use super::*;
-    impl<O: Sharable + NotUnit> CallableNode<(), O> for PipelineNode<(), O> {
-        fn call(&mut self, step: &mut impl PipelineStep<(), O>) {
-            let output_data: O = step.run(());
+// pub mod PipelineSource {
+//     use super::*;
+//     impl<O: Sharable> CallableNode<(), O> for PipelineNode<(), O> {
+//         fn call(&mut self, step: &mut impl PipelineStep<(), O>) {
+//             let output_data: O = step.run(());
+//
+//             match self.output.as_mut().unwrap().send(output_data) {
+//                 Ok(()) => {}
+//                 Err(_msg) => {}
+//             }
+//         }
+//     }
+//     default impl<O: Sharable> PipelineNode<(), O> {
+//         pub fn start_pipeline<F: Sharable>(start_id: String, source_step: impl PipelineStep<(), O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
+//             let (sender, receiver) = channel::<O>();
+//             let start_node: PipelineNode<(), O> = PipelineNode { input: None, output: Some(sender), id: start_id };
+//
+//             let mut successor: PipelineNode<O, F> = PipelineNode::new(String::from(""));
+//             successor.input = Some(receiver);
+//
+//             let new_thread = PipelineThread::new(source_step, start_node);
+//             pipeline.nodes.push(new_thread);
+//
+//             return successor;
+//         }
+//     }
+// }
 
-            match self.output.as_mut().unwrap().send(output_data) {
-                Ok(()) => {}
-                Err(_msg) => {}
+// pub mod PipelineSink {
+//     use super::*;
+//
+//     impl<I: Sharable> CallableNode<I, ()> for PipelineNode<I, ()> {
+//         fn call(&mut self, step: &mut impl PipelineStep<I, ()>) {
+//             let input_data: I = self.input.as_mut().unwrap().recv().unwrap();
+//             step.run(input_data);
+//         }
+//     }
+//
+//     impl<I: Sharable> PipelineNode<I, ()> {
+//         pub fn cap_pipeline(mut self, id: String, step: impl PipelineStep<I, ()> + 'static, pipeline: &mut RadioPipeline) {
+//             self.set_id(id);
+//
+//             let new_thread = PipelineThread::new(step, self);
+//             pipeline.nodes.push(new_thread);
+//         }
+//     }
+// }
+
+
+impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> {
+    fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineError {
+        //println!("ID: {} waiting for input!", &self.id);
+        let input_data;
+
+        match self.input.recv_timeout(std::time::Duration::from_millis(100)) {
+            (Ok(data), _) => input_data = Some(data),
+            (Err(RecvTimeoutError), true) => {
+                //println!("ID: {} failed to receive!", &self.id);
+                return PipelineError::ReceiveError
             }
+            (Err(RecvTimeoutError), false) => input_data = None
         }
-    }
-    impl<O: Sharable + NotUnit> PipelineNode<(), O> {
-        pub fn start_pipeline<F: Sharable + NotUnit>(start_id: String, source_step: impl PipelineStep<(), O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
-            let (sender, receiver) = channel::<O>();
-            let start_node = PipelineNode { input: None, output: Some(sender), id: start_id };
 
-            let mut successor: PipelineNode<O, F> = PipelineNode::new(String::from(""));
-            successor.input = Some(receiver);
+        //println!("ID: {} received!", &self.id);
+        let output_data: O = step.run(input_data);
 
-            let new_thread = PipelineThread::new(source_step, start_node);
-            pipeline.nodes.push(new_thread);
+        let return_error = match self.output.send(output_data) {
+            Ok(()) => PipelineError::Ok,
+            Err(_msg) => PipelineError::SendError
+        };
 
-            return successor;
-        }
+        //println!("ID: {} sent!", &self.id);
+
+        return return_error;
     }
 }
 
-pub mod PipelineSink {
-    use super::*;
 
-    impl<I: Sharable + NotUnit> CallableNode<I, ()> for PipelineNode<I, ()> {
-        fn call(&mut self, step: &mut impl PipelineStep<I, ()>) {
-            let input_data: I = self.input.as_mut().unwrap().recv().unwrap();
-            step.run(input_data);
+impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
+    pub fn new() -> PipelineNode<I, O> {
+        PipelineNode {
+            input: RealReceiver::Dummy,
+            output: RealSender::Dummy,
+            id: String::from("")
         }
     }
 
-    impl<I: Sharable + NotUnit> PipelineNode<I, ()> {
-        pub fn cap_pipeline(mut self, id: String, step: impl PipelineStep<I, ()> + 'static, pipeline: &mut RadioPipeline) {
-            self.set_id(id);
+    pub fn attach<F: Sharable>(mut self, id: String, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
+        let (sender, receiver) = mpsc::sync_channel::<O>(1);
+        let mut successor: PipelineNode<O, F> = PipelineNode::new();
 
-            let new_thread = PipelineThread::new(step, self);
-            pipeline.nodes.push(new_thread);
-        }
-    }
-}
+        self.set_id(id);
 
+        self.output = RealSender::Real(sender);
+        successor.input = RealReceiver::Real(receiver);
 
-pub mod PipelineInner {
-    use super::*;
+        let new_thread = PipelineThread::new(step, self);
+        pipeline.nodes.push(new_thread);
 
-    impl<I: Sharable + NotUnit, O: Sharable + NotUnit> CallableNode<I, O> for PipelineNode<I, O> {
-        fn call(&mut self, step: &mut impl PipelineStep<I, O>) {
-            let input_data: I = self.input.as_mut().unwrap().recv().unwrap();
-            let output_data: O = step.run(input_data);
-
-            match self.output.as_mut().unwrap().send(output_data) {
-                Ok(()) => {}
-                Err(_msg) => {}
-            }
-        }
+        return successor;
     }
 
+    pub fn cap_pipeline(mut self, id: String, step: impl PipelineStep<I, O> + 'static + Sink, pipeline: &mut RadioPipeline)
+    where O: Unit {
+        self.set_id(id);
 
-    impl<I: Sharable + NotUnit, O: Sharable + NotUnit> PipelineNode<I, O> {
-        pub fn new(id: String) -> PipelineNode<I, O> {
-            PipelineNode {
-                input: None,
-                output: None,
-                id
-            }
-        }
+        self.output = RealSender::Dummy;
 
-        pub fn attach<F: Sharable + NotUnit>(mut self, id: String, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
-            let (sender, receiver) = channel::<O>();
-            let mut successor: PipelineNode<O, F> = PipelineNode::new(String::from(""));
+        let new_thread = PipelineThread::new(step, self);
+        pipeline.nodes.push(new_thread);
+    }
 
-            self.set_id(id);
+    pub fn start_pipeline<F: Sharable>(start_id: String, source_step: impl PipelineStep<I, O> + 'static + Source, pipeline: &mut RadioPipeline) -> PipelineNode<O, F>
+    where I: Unit {
+        let (sender, receiver) = mpsc::sync_channel::<O>(1);
 
-            self.output = Some(sender);
-            successor.input = Some(receiver);
+        let start_node: PipelineNode<I, O> = PipelineNode { input: RealReceiver::Dummy, output: RealSender::Real(sender), id: start_id };
 
-            let new_thread = PipelineThread::new(step, self);
-            pipeline.nodes.push(new_thread);
+        let mut successor: PipelineNode<O, F> = PipelineNode::new();
+        successor.input = RealReceiver::Real(receiver);
 
-            return successor;
-        }
+        let new_thread = PipelineThread::new(source_step, start_node);
+        pipeline.nodes.push(new_thread);
+
+        return successor;
     }
 }

@@ -7,7 +7,8 @@ pub struct LinearConvolutionPadder {
     filter_size: usize
 }
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for LinearConvolutionPadder {
-    fn run<'a>(&mut self, mut input: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
+    fn run<'a>(&mut self, input: Option<Vec<Complex<f32>>>) -> Vec<Complex<f32>> {
+        let mut input = input.unwrap();
         input.append(&mut vec![Complex::new(0.0, 0.0); self.filter_size - 1]);
         return input;
     }

@@ -25,7 +25,8 @@ impl ConvolutionalReassembler {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalReassembler {
-    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
+    fn run(&mut self, input: Option<Vec<u8>>) -> Vec<u8> {
+        let input = input.unwrap();
         let mut output: Vec<u8> = vec![0; input.len()];
         self.compute_input_vector(&input, &mut output);
 
