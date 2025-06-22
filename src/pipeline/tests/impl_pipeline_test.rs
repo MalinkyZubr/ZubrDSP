@@ -4,6 +4,7 @@ mod node_tests {
     use std::thread::sleep;
     use num::Complex;
     use crate::dsp::fft::bit_reversal::FFTBitReversal;
+    use crate::dsp::fft::bit_reversal_optimized::FFTBitReversalOptimized;
     use crate::pipeline::pipeline::RadioPipeline;
     use crate::pipeline::prototype::{PipelineNode, PipelineStep, Unit, Source, Sink};
     use super::*;
@@ -50,8 +51,8 @@ mod node_tests {
 
         PipelineNode::start_pipeline(String::from("test_source"), Dummy1 {counter: 0}, &mut pipeline)
             .attach(String::from("step 1"), Dummy2 {}, &mut pipeline)
-            .attach(String::from("step 2"), FFTBitReversal::new(2048, 8, false), &mut pipeline)
-            .attach(String::from("step 2"), FFTBitReversal::new(2048, 8, true), &mut pipeline)
+            .attach(String::from("step 2"), FFTBitReversalOptimized::new(2048, 8, false), &mut pipeline)
+            .attach(String::from("step 2"), FFTBitReversalOptimized::new(2048, 8, true), &mut pipeline)
             .cap_pipeline(String::from("step 3"), Dummy5 { sender: output_pair.0 }, &mut pipeline);
 
         pipeline.start();
@@ -60,7 +61,7 @@ mod node_tests {
             let tester: Vec<u32> = (0..2048).collect();
             for (real, test) in output_pair.1.recv().unwrap().iter().zip(tester.iter()) {
                 //dbg!(real, test);
-                assert!((*real == 0 || *test == 0) || ((100.0 * (*real as f32 - *test as f32).abs() / *test as f32) < 20.0));
+                assert!((*real == 0 || *test == 0) || ((100.0 * (*real as f32 - *test as f32).abs() / *test as f32) < 10.0));
             }
         }
 

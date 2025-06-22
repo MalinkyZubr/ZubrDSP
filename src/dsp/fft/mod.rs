@@ -3,3 +3,4 @@ pub mod linear;
 pub mod bit_reversal;
 pub mod tests;
 pub mod fftshift;
+pub mod bit_reversal_optimized;

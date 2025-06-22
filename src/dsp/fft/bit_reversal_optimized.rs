@@ -1,21 +1,17 @@
 use num::Complex;
-use std::f32::consts::{PI};
+use std::f32::{consts::{PI}};
+use std::usize::MAX;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::general::parallel_computation::{self, *};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use crate::pipeline::prototype::PipelineStep;
+use super::bit_reversal::*;
 
-
-//#[derive(Clone, Copy)]
-enum ParityEnum {
-    Even = 0,
-    Odd = 1
-}
 
 // static twiddle computation is less time efficient, apparently. Cache really makes a difference
-pub struct FFTBitReversal { // log_2(n) levels to the n sized fft for radix 2, nlogn total space in the vector
-    bit_reversal_mapping: HashMap<usize, usize>,
+pub struct FFTBitReversalOptimized { // log_2(n) levels to the n sized fft for radix 2, nlogn total space in the vector
+    bit_reversal_mapping: Vec<usize>,
     fft_size: usize,
     //twiddle_factors: HashMap<usize, Vec<Complex<f32>>>,
     index_bits_needed: usize,
@@ -24,13 +20,13 @@ pub struct FFTBitReversal { // log_2(n) levels to the n sized fft for radix 2, n
     is_ifft: bool
 }
 
-impl FFTBitReversal {
+impl FFTBitReversalOptimized {
     pub fn new(buffer_size: usize, num_threads: usize, is_ifft: bool) -> Self {
         let index_bits_needed = (buffer_size as f64).log2() as usize;
 
         let pool = ThreadPoolBuilder::new().num_threads(num_threads).build().unwrap();
         
-        FFTBitReversal { 
+        FFTBitReversalOptimized { 
             bit_reversal_mapping: Self::generate_bit_reversal_mapping(buffer_size, index_bits_needed),
             fft_size: buffer_size,
             //twiddle_factors: Self::compute_twiddle_factors_all(buffer_size),
@@ -86,16 +82,19 @@ impl FFTBitReversal {
         return reversed;
     }
 
-    fn generate_bit_reversal_mapping(buffer_size: usize, index_bits_needed: usize) -> HashMap<usize, usize> {
-        let mut reversal_map: HashMap<usize, usize> = HashMap::new();
+    fn generate_bit_reversal_mapping(buffer_size: usize, index_bits_needed: usize) -> Vec<usize> {
+        let mut reversal_map: Vec<usize> = vec![0; buffer_size];
 
         for start_index in 0..buffer_size {
-            let reversed_index = FFTBitReversal::get_bit_reversal(start_index, index_bits_needed);
+            if reversal_map[start_index] != usize::MAX {
+                let reversed_index = FFTBitReversal::get_bit_reversal(start_index, index_bits_needed);
 
-            if reversed_index != start_index {
-                match reversal_map.get(&reversed_index) {
-                    Some(_value) => {},
-                    None => {reversal_map.insert(start_index, reversed_index); ()}
+                if reversed_index != start_index {
+                    reversal_map[start_index] = reversed_index;
+                    reversal_map[reversed_index] = usize::MAX;
+                }
+                else {
+                    reversal_map[start_index] = usize::MAX;
                 }
             }
         }
@@ -105,12 +104,14 @@ impl FFTBitReversal {
 
     fn bit_reversal_in_place(&self, buffer: &mut [Complex<f32>]) {
         for first_index in 0..buffer.len() {
-            match self.bit_reversal_mapping.get(&first_index) {
+            match self.bit_reversal_mapping.get(first_index) {
                 None => {},
                 Some(second_index) => {
-                    let temp = buffer[first_index];
-                    buffer[first_index] = buffer[*second_index];
-                    buffer[*second_index] = temp;
+                    if *second_index != usize::MAX {
+                        let temp = buffer[first_index];
+                        buffer[first_index] = buffer[*second_index];
+                        buffer[*second_index] = temp;
+                    }
                 }
             }
         }
@@ -212,7 +213,7 @@ impl FFTBitReversal {
 }
 
 
-impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FFTBitReversal {    
+impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FFTBitReversalOptimized {    
     fn run(&mut self, input: Option<Vec<Complex<f32>>>) -> Vec<Complex<f32>> {
         let mut input = input.unwrap();
         if self.is_ifft {
