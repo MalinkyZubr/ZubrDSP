@@ -1,6 +1,8 @@
 #[cfg(test)]
 pub mod bit_reversal_fft_optimized {
+    use std::time;
     use num::Complex;
+    use rustfft::FftPlanner;
     use crate::dsp::fft::{bit_reversal::FFTBitReversal, bit_reversal_optimized::FFTBitReversalOptimized};
     use crate::dsp::fft::fftshift::{fft_shift, generate_frequency_axis};
 
@@ -9,7 +11,7 @@ pub mod bit_reversal_fft_optimized {
             let error = (accepted - true_value);//.norm();
             //let percent_error = (error / accepted).norm() * 100.0;
 
-            assert!(error.norm() < 5.0);
+            assert!(error.norm() < 2.0);
         }
     }
 
@@ -29,7 +31,23 @@ pub mod bit_reversal_fft_optimized {
         //dbg!("{}", &original);
 
         verify_not_too_much_error(&original_buffer, &original);
-    } 
+    }
+
+    fn test_fft_bit_reversal_comparative(input_buffer: Vec<Complex<f32>>) {
+        let mut fft_computer = FFTBitReversalOptimized::new(input_buffer.len(), false);
+
+        let original_buffer = input_buffer.clone();
+
+        let time = std::time::Instant::now();
+        let result = fft_computer.fft(input_buffer);
+        dbg!(time.elapsed());
+
+        let original = fft_computer.ifft(result);
+
+        //dbg!("{}", &original);
+
+        verify_not_too_much_error(&original_buffer, &original);
+    }
 
     fn convert_to_complex(input: Vec<f32>) -> Vec<Complex<f32>> {
         let new_vector = input.iter()
@@ -89,6 +107,19 @@ pub mod bit_reversal_fft_optimized {
             Complex::new(-4.000000, -4.000000),
             Complex::new(-4.000000, -9.656854),
         ]
-    )
+    );
+        let input = convert_to_complex((0..2048).map(|x| x as f32).collect());
+        
+        test_fft_bit_reversal_comparative(
+            input
+        );
+        
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(16);
+        let mut data: Vec<Complex<f32>> = (0..2048).map(|x| Complex::new(x as f32, 0.0)).collect();
+        let start = time::Instant::now();
+        fft.process(&mut data);
+
+        dbg!("{}", start.elapsed());
     }
 }

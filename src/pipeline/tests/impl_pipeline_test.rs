@@ -8,6 +8,8 @@ mod node_tests {
     use crate::pipeline::pipeline::RadioPipeline;
     use crate::pipeline::prototype::{PipelineNode, PipelineStep, Unit, Source, Sink};
     use super::*;
+    use std::time;
+    use rustfft::{FftPlanner};
 
 
     struct Dummy1{
@@ -15,7 +17,7 @@ mod node_tests {
     }
     impl PipelineStep<(), Vec<u32>> for Dummy1 {
         fn run(&mut self, input: Option<()>) -> Vec<u32> {
-            if self.counter < 4000 {
+            if self.counter < 1 {
                 self.counter += 1;
                 (0..2048).collect()
             }
@@ -57,14 +59,23 @@ mod node_tests {
 
         pipeline.start();
 
-        for x in 0..4000 {
+        let start = time::Instant::now();
+        for x in 0..1 {
             let tester: Vec<u32> = (0..2048).collect();
             for (real, test) in output_pair.1.recv().unwrap().iter().zip(tester.iter()) {
                 //dbg!(real, test);
                 assert!((*real == 0 || *test == 0) || ((100.0 * (*real as f32 - *test as f32).abs() / *test as f32) < 10.0));
             }
         }
-
+        dbg!(start.elapsed());
         pipeline.kill();
+
+        let start = time::Instant::now();
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(2048);
+        let mut data: Vec<Complex<f32>> = (0..2048).map(|x| Complex::new(x as f32, 0.0)).collect();
+        fft.process(&mut data);
+        
+        dbg!("{}", start.elapsed());
     }
 }
