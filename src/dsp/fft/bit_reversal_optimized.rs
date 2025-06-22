@@ -13,40 +13,37 @@ use super::bit_reversal::*;
 pub struct FFTBitReversalOptimized { // log_2(n) levels to the n sized fft for radix 2, nlogn total space in the vector
     bit_reversal_mapping: Vec<usize>,
     fft_size: usize,
-    //twiddle_factors: HashMap<usize, Vec<Complex<f32>>>,
+    twiddle_factors: Vec<Complex<f32>>,
     index_bits_needed: usize,
-    parallel_unit: ThreadPool,
-    num_threads: usize,
+    strides: Vec<usize>,
     is_ifft: bool
 }
 
 impl FFTBitReversalOptimized {
-    pub fn new(buffer_size: usize, num_threads: usize, is_ifft: bool) -> Self {
+    pub fn new(buffer_size: usize, is_ifft: bool) -> Self {
         let index_bits_needed = (buffer_size as f64).log2() as usize;
-
-        let pool = ThreadPoolBuilder::new().num_threads(num_threads).build().unwrap();
         
         FFTBitReversalOptimized { 
             bit_reversal_mapping: Self::generate_bit_reversal_mapping(buffer_size, index_bits_needed),
             fft_size: buffer_size,
-            //twiddle_factors: Self::compute_twiddle_factors_all(buffer_size),
+            twiddle_factors: Self::compute_twiddle_factors(buffer_size),
             index_bits_needed,
-            parallel_unit: pool,
-            num_threads,
-            is_ifft
+            is_ifft,
+            strides: Self::compute_strides(buffer_size)
         }
     }
 
-    fn compute_twiddle_factors_all(buffer_size: usize) -> HashMap<usize, Vec<Complex<f32>>> {
-        let mut size: usize = 2;
-        let mut twiddle_factors: HashMap<usize, Vec<Complex<f32>>> = HashMap::new();
+    fn compute_strides(buffer_size: usize) -> Vec<usize> {
+        let mut strides: Vec<usize> = vec![0; buffer_size + 1];
 
-        while size <= buffer_size {
-            twiddle_factors.insert(size, Self::compute_twiddle_factors(size));
-            size *= 2;
+        let mut butterfly_size = 2;
+
+        while butterfly_size <= buffer_size {
+            strides[butterfly_size] = buffer_size / (butterfly_size / 2);
+            butterfly_size *= 2;
         }
 
-        return twiddle_factors
+        return strides;
     }
 
     fn compute_twiddle_factors(buffer_size: usize) -> Vec<Complex<f32>> {
@@ -117,20 +114,21 @@ impl FFTBitReversalOptimized {
         }
     }
 
-    fn get_proper_twiddle_factor(compute_index: usize, butterfly_size: usize) -> Complex<f32> {
-        let angle = -2.0 * PI * compute_index as f32 / butterfly_size as f32;
-        Complex::new(0.0, angle).exp()
+    fn get_proper_twiddle_factor(&self, compute_index: usize, stride: usize) -> Complex<f32> {
+        return self.twiddle_factors[compute_index * (stride / 2)];
     }
 
-    fn compute_single_butterfly(&self, butterfly_size: usize, butterfly_index: usize, buffer: &mut[Complex<f32>]) {
-        for compute_index in 0..(butterfly_size / 2) {
+    fn compute_single_butterfly(&self, butterfly_size: usize, butterfly_index: usize, buffer: &mut[Complex<f32>], stride: usize) {
+        //println!("TWIDDLES: {:?}, STRIDE: {}", &self.twiddle_factors, stride);
+        let half_size = (butterfly_size / 2);
+        for compute_index in 0..half_size {
             let true_index = butterfly_index + compute_index;
-            let true_offset_index = true_index + (butterfly_size / 2);
+            let true_offset_index = true_index + half_size;
 
             let p = buffer[true_index];
-            let q = buffer[true_offset_index] * //self.twiddle_factors[&butterfly_size][compute_index];
-                Self::get_proper_twiddle_factor(compute_index, butterfly_size);
-
+            let q = buffer[true_offset_index] * 
+                self.get_proper_twiddle_factor(compute_index, stride);
+            
             buffer[true_index] = p + q;
             buffer[true_offset_index] = p - q;
         }
@@ -143,57 +141,19 @@ impl FFTBitReversalOptimized {
             let butterfly_size = 1 << fft_stage;
             let mut butterfly_index = 0;
 
+            let stride = self.strides[butterfly_size];
+
             while butterfly_index < self.fft_size {
-                self.compute_single_butterfly(butterfly_size, butterfly_index, buffer);
+                self.compute_single_butterfly(butterfly_size, butterfly_index, buffer, stride);
                 
                 butterfly_index += butterfly_size;
             }
         }
     }
 
-    fn compute_single_butterfly_parallel(&self, butterfly_size: usize, slice: &mut[Complex<f32>]) {
-        for even_index in 0..(butterfly_size / 2) {
-            let odd_index = even_index + (butterfly_size / 2);
-
-            let p = slice[even_index];
-            let q = slice[odd_index] * //self.twiddle_factors[&butterfly_size][compute_index];
-                Self::get_proper_twiddle_factor(even_index, butterfly_size);
-
-            slice[even_index] = p + q;
-            slice[odd_index] = p - q;
-        }
-    }
-
-    fn compute_fft_parallel(&mut self, mut buffer: Vec<Complex<f32>>) -> Vec<Complex<f32>>{
-        self.bit_reversal_in_place(&mut buffer);
-
-        for fft_stage in 1..self.index_bits_needed + 1 {
-            let butterfly_size = 1 << fft_stage;
-            let chunks = buffer.chunks_mut(butterfly_size);
-            
-            self.parallel_unit.scope(
-                |s| {
-                    for chunk in chunks {
-                        s.spawn(|s| {
-                            self.compute_single_butterfly_parallel(butterfly_size, chunk);
-                        })
-                    }
-                }
-
-            )
-        }
-
-        return buffer;
-    }
-
     pub fn fft(&mut self, mut buffer: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
-        if self.num_threads > 1 {
-            self.compute_fft(&mut buffer);
-            return buffer
-        }
-        else {
-            return self.compute_fft_parallel(buffer);
-        }
+        self.compute_fft(&mut buffer);
+        return buffer
     }
 
     pub fn ifft(&mut self, mut buffer: Vec<Complex<f32>>) -> Vec<Complex<f32>> {

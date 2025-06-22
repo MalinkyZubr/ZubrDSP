@@ -15,7 +15,7 @@ mod node_tests {
     }
     impl PipelineStep<(), Vec<u32>> for Dummy1 {
         fn run(&mut self, input: Option<()>) -> Vec<u32> {
-            if self.counter < 1000 {
+            if self.counter < 4000 {
                 self.counter += 1;
                 (0..2048).collect()
             }
@@ -51,13 +51,13 @@ mod node_tests {
 
         PipelineNode::start_pipeline(String::from("test_source"), Dummy1 {counter: 0}, &mut pipeline)
             .attach(String::from("step 1"), Dummy2 {}, &mut pipeline)
-            .attach(String::from("step 2"), FFTBitReversalOptimized::new(2048, 8, false), &mut pipeline)
-            .attach(String::from("step 2"), FFTBitReversalOptimized::new(2048, 8, true), &mut pipeline)
+            .attach(String::from("step 2"), FFTBitReversalOptimized::new(2048, false), &mut pipeline)
+            .attach(String::from("step 2"), FFTBitReversalOptimized::new(2048, true), &mut pipeline)
             .cap_pipeline(String::from("step 3"), Dummy5 { sender: output_pair.0 }, &mut pipeline);
 
         pipeline.start();
 
-        for x in 0..1000 {
+        for x in 0..4000 {
             let tester: Vec<u32> = (0..2048).collect();
             for (real, test) in output_pair.1.recv().unwrap().iter().zip(tester.iter()) {
                 //dbg!(real, test);

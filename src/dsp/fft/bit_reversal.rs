@@ -186,7 +186,7 @@ impl FFTBitReversal {
     }
 
     pub fn fft(&mut self, mut buffer: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
-        if self.num_threads > 1 {
+        if self.num_threads <= 1 {
             self.compute_fft(&mut buffer);
             return buffer
         }

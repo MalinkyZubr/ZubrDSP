@@ -13,8 +13,8 @@ pub mod bit_reversal_fft_optimized {
         }
     }
 
-    fn test_fft_bit_reversal(input_buffer: Vec<Complex<f32>>, true_f_domain: &Vec<Complex<f32>>, threads: usize) {
-        let mut fft_computer = FFTBitReversalOptimized::new(input_buffer.len(), threads, false);
+    fn test_fft_bit_reversal(input_buffer: Vec<Complex<f32>>, true_f_domain: &Vec<Complex<f32>>) {
+        let mut fft_computer = FFTBitReversalOptimized::new(input_buffer.len(), false);
 
         let original_buffer = input_buffer.clone();
 
@@ -66,7 +66,7 @@ pub mod bit_reversal_fft_optimized {
             Complex::new(1.0, 0.0),
             Complex::new(1.0, 0.0),
             Complex::new(1.0, 0.0),
-        ], 1
+        ]
     );
         test_fft_bit_reversal(convert_to_complex(
             vec![1.0,2.0,3.0,4.0]
@@ -75,7 +75,7 @@ pub mod bit_reversal_fft_optimized {
             Complex::new(-2.0, 2.0),
             Complex::new(-2.0, 0.0),
             Complex::new(-2.0, -2.0),
-        ], 1
+        ]
     );
         test_fft_bit_reversal(convert_to_complex(
             vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0]
@@ -88,7 +88,7 @@ pub mod bit_reversal_fft_optimized {
             Complex::new(-4.000000, -1.656854),
             Complex::new(-4.000000, -4.000000),
             Complex::new(-4.000000, -9.656854),
-        ], 1
+        ]
     )
     }
 }
