@@ -1,6 +1,6 @@
 #![feature(trait_alias)]
 #![feature(specialization)]
-#![feature(mpmc_channel, portable_simd)]
+#![feature(mpmc_channel, portable_simd, test)]
 
 mod pipeline;
 mod byte_line;

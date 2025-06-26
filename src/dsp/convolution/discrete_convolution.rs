@@ -11,7 +11,7 @@ impl DiscreteConvolution {
         }
     }
     
-    fn convolve_input() {
+    fn convolve_input(&self, input: &mut Vec<f32>) {
         
     }
 }

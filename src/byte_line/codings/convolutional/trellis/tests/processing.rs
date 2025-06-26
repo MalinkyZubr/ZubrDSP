@@ -4,6 +4,10 @@ pub mod convolutional_tests {
         params::ConvolutionalParams, reconstruct::ConvolutionalReassembler, trellis::{ConvolutionalEncoderLookup, ConvolutionalLookupGenerator, TrellisStateChangeEncode}, viterbi::ViterbiOpCore
     };
     use std::collections::HashMap;
+    use rand::Rng;
+    extern crate test;
+    
+    
     #[test]
     fn encoding_trellis_test() {
         let test_params1 = ConvolutionalParams::new(
@@ -87,10 +91,10 @@ pub mod convolutional_tests {
         test_reassembler.compute_input_vector(&result.1, &mut input_sequence);
 
         dbg!("{}, {}", &result.0, &result.1);
-        assert!(&result.1 == &valid_state_sequence);
+        assert!(result.1 == valid_state_sequence);
 
         dbg!("{}", &input_sequence);
-        assert!(&input_sequence == &valid_input_sequence);
+        assert!(input_sequence == valid_input_sequence);
 
         let test_output: Vec<u8> = vec![0b11, 0b10, 0b00, 0b00, 0b11];
         let valid_state_sequence: Vec<u8> = vec![0b01, 0b10, 0b00, 0b00, 0b01];
@@ -102,10 +106,27 @@ pub mod convolutional_tests {
         test_reassembler.compute_input_vector(&result.1, &mut input_sequence);
 
         dbg!("{}, {}", &result.0, &result.1);
-        assert!(&result.1 == &valid_state_sequence);
+        assert!(result.1 == valid_state_sequence);
 
         dbg!("{}", &input_sequence);
-        assert!(&input_sequence == &valid_input_sequence);
+        assert!(input_sequence == valid_input_sequence);
+    }
+    
+    #[bench]
+    fn viterbi_bench(b: &mut test::Bencher) {
+        let mut rng = rand::rng();
+        let input = [rng.random_range(0..4); 2048];
+        let test_params1 = ConvolutionalParams::new(
+            2, 
+            1, 
+            vec![1, 3]);
+
+        let test_trellis: ConvolutionalEncoderLookup = ConvolutionalLookupGenerator::generate_encoding_lookup(&test_params1.unwrap());
+        let mut viterbi: ViterbiOpCore = ViterbiOpCore::new(2048, &test_trellis);
+        
+        b.iter(|| {
+            let decoded = viterbi.viterbi(&input);
+        })
     }
 }
 

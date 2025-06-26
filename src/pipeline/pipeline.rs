@@ -38,8 +38,8 @@ impl RadioPipeline {
         }
     }
     
-    pub fn kill(self) {
-        for mut node in self.nodes {
+    pub fn kill(&mut self) {
+        for mut node in self.nodes.iter_mut() {
             node.kill();
         }
     }

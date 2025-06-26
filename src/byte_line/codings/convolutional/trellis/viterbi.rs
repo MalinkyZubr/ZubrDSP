@@ -127,7 +127,7 @@ impl ViterbiOpCore {
         // the question is: for every state at each time point, what is the most efficient way to get to that state?
 
         for time_step in 0..observations.len() {
-            dbg!("{}", &self.viterbi_matrix);
+            //dbg!("{}", &self.viterbi_matrix);
 
             self.execute_state_machine(time_step, observations);
 
@@ -149,7 +149,7 @@ impl ViterbiOpCore {
             }
         }
 
-        dbg!("{}", &self.state_paths);
+        //dbg!("{}", &self.state_paths);
 
         return (highest_final_similarity, self.state_paths[highest_similarity_final_state as usize].clone());
     }

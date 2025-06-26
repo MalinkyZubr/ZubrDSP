@@ -5,6 +5,7 @@ pub mod bit_reversal_fft_optimized {
     use rustfft::FftPlanner;
     use crate::dsp::fft::{bit_reversal::FFTBitReversal, bit_reversal_optimized::FFTBitReversalOptimized};
     use crate::dsp::fft::fftshift::{fft_shift, generate_frequency_axis};
+    extern crate test;
 
     fn verify_not_too_much_error(accepted: &Vec<Complex<f32>>, reality: &Vec<Complex<f32>>) {
         for (accepted, true_value) in accepted.iter().zip(reality) {
@@ -108,18 +109,15 @@ pub mod bit_reversal_fft_optimized {
             Complex::new(-4.000000, -9.656854),
         ]
     );
-        let input = convert_to_complex((0..2048).map(|x| x as f32).collect());
         
-        test_fft_bit_reversal_comparative(
-            input
-        );
-        
-        let mut planner = FftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(16);
-        let mut data: Vec<Complex<f32>> = (0..2048).map(|x| Complex::new(x as f32, 0.0)).collect();
-        let start = time::Instant::now();
-        fft.process(&mut data);
-
-        dbg!("{}", start.elapsed());
+    }
+    
+    #[bench]
+    fn optimized_fft_bench(b: &mut test::Bencher) {
+        b.iter(|| {
+            test_fft_bit_reversal_comparative(
+                convert_to_complex((0..512).map(|x| x as f32).collect())
+            ) 
+        });
     }
 }
