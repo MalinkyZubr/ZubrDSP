@@ -115,7 +115,11 @@ pub mod convolutional_tests {
     #[bench]
     fn viterbi_bench(b: &mut test::Bencher) {
         let mut rng = rand::rng();
-        let input = [rng.random_range(0..4); 2048];
+        let mut input = [0; 2048];
+        for value in input.iter_mut() {
+            *value = rng.random_range(0..4)    
+        }
+        
         let test_params1 = ConvolutionalParams::new(
             2, 
             1, 
@@ -124,6 +128,7 @@ pub mod convolutional_tests {
         let test_trellis: ConvolutionalEncoderLookup = ConvolutionalLookupGenerator::generate_encoding_lookup(&test_params1.unwrap());
         let mut viterbi: ViterbiOpCore = ViterbiOpCore::new(2048, &test_trellis);
         
+        dbg!("{}", &input);
         b.iter(|| {
             let decoded = viterbi.viterbi(&input);
         })

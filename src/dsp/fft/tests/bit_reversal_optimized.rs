@@ -41,7 +41,7 @@ pub mod bit_reversal_fft_optimized {
 
         let time = std::time::Instant::now();
         let result = fft_computer.fft(input_buffer);
-        dbg!(time.elapsed());
+        //dbg!(time.elapsed());
 
         let original = fft_computer.ifft(result);
 

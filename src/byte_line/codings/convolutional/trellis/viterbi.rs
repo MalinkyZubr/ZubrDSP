@@ -3,6 +3,7 @@ use crate::byte_line::codings::opts::*;
 use crate::pipeline::prototype::PipelineStep;
 
 use std::mem;
+use std::u8::MAX;
 
 
 enum ViterbiState {
@@ -34,7 +35,6 @@ pub struct ViterbiOpCore {
     newpath_buffer: Vec<Vec<u8>>,
     markov_model: HiddenMarkovModel,
     output_size: u8,
-    next_state_swap_vector: Vec<u8>,
     state_machine: ViterbiState
 }
 
@@ -47,8 +47,6 @@ impl ViterbiOpCore {
         let state_paths: Vec<Vec<u8>> = vec![vec![0; buffer_size]; num_states];
         let newpath_buffer: Vec<Vec<u8>> = vec![vec![0; buffer_size]; num_states];
 
-        let next_state_swap_vector: Vec<u8> = vec![0; num_states];
-
         let markov_model: HiddenMarkovModel = HiddenMarkovModel::new(
             num_states as u8, 
             encoder_lookup.to_transition_matrix(), 
@@ -60,7 +58,6 @@ impl ViterbiOpCore {
             newpath_buffer, 
             markov_model, 
             output_size,
-            next_state_swap_vector,
             state_machine: ViterbiState::NotStarted
         }
     }
@@ -95,26 +92,29 @@ impl ViterbiOpCore {
         }
 
         return (max_similarity, max_state)
-    }  
+    }
+
+    fn swap_path_vector_in_place(&mut self, swap_vec: Vec<u8>) {
+
+    }
 
     fn execute_state_machine(&mut self, time_step: usize, observations: &[u8]) {
-
         match self.state_machine {
-            ViterbiState::Standard|ViterbiState::Standard => {
+            ViterbiState::Standard => {
                 for target_state in 0..self.markov_model.max_state {
                     let (max_similarity, max_state) = self.identify_maximum_similarity_predecessor(&(target_state as usize), &time_step, observations);
-                    //dbg!("{}", &max_similarity);
 
                     self.viterbi_matrix[time_step][target_state as usize] = max_similarity;
-                    // why do we need to make separate paths? because if we change the current path in place, it will corrupt results of others that rely on the orignal path to the given node, but havent been computed yet.
-                    // this is th only way to maintain integrity
-                    //self.next_state_swap_vector[max_state as usize] = target_state;
-                    let mut temp_path = self.state_paths[max_state as usize].clone(); // to get rid of this clone later // getting rid of clone here and having another loop still reduce time complexity because this clone causes n^2 time comp, better to have 2N
-                    // plan: create a separate buffer where the intex of each next state corresponds to the last previous state, allow to index the previous state path easily
-                    // when all final states and indicies are computed, swap the previous state paths with their designated indicies in the newpath
+                    
+                    //self.next_state_swap_vector[max_state as usize] = MAX; // might be problem later for large state machines
+
+                    let mut temp_path = self.state_paths[max_state as usize].clone();
+
                     temp_path[time_step] = target_state;
                     self.newpath_buffer[target_state as usize] = temp_path;
                 }
+
+                //dbg!("{}", &self.next_state_swap_vector);
             },
             ViterbiState::NotStarted => {
                 self.viterbi_matrix[0][0] = self.compute_hamming_similarity(&observations[0], &0, &0);
