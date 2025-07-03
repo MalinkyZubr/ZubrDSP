@@ -86,61 +86,12 @@ impl<I: Sharable, O: Sharable> HasID for PipelineNode<I, O> {
     }
 }
 
-// pub mod PipelineSource {
-//     use super::*;
-//     impl<O: Sharable> CallableNode<(), O> for PipelineNode<(), O> {
-//         fn call(&mut self, step: &mut impl PipelineStep<(), O>) {
-//             let output_data: O = step.run(());
-//
-//             match self.output.as_mut().unwrap().send(output_data) {
-//                 Ok(()) => {}
-//                 Err(_msg) => {}
-//             }
-//         }
-//     }
-//     default impl<O: Sharable> PipelineNode<(), O> {
-//         pub fn start_pipeline<F: Sharable>(start_id: String, source_step: impl PipelineStep<(), O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
-//             let (sender, receiver) = channel::<O>();
-//             let start_node: PipelineNode<(), O> = PipelineNode { input: None, output: Some(sender), id: start_id };
-//
-//             let mut successor: PipelineNode<O, F> = PipelineNode::new(String::from(""));
-//             successor.input = Some(receiver);
-//
-//             let new_thread = PipelineThread::new(source_step, start_node);
-//             pipeline.nodes.push(new_thread);
-//
-//             return successor;
-//         }
-//     }
-// }
-
-// pub mod PipelineSink {
-//     use super::*;
-//
-//     impl<I: Sharable> CallableNode<I, ()> for PipelineNode<I, ()> {
-//         fn call(&mut self, step: &mut impl PipelineStep<I, ()>) {
-//             let input_data: I = self.input.as_mut().unwrap().recv().unwrap();
-//             step.run(input_data);
-//         }
-//     }
-//
-//     impl<I: Sharable> PipelineNode<I, ()> {
-//         pub fn cap_pipeline(mut self, id: String, step: impl PipelineStep<I, ()> + 'static, pipeline: &mut RadioPipeline) {
-//             self.set_id(id);
-//
-//             let new_thread = PipelineThread::new(step, self);
-//             pipeline.nodes.push(new_thread);
-//         }
-//     }
-// }
-
-
 impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> {
     fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineError {
         //println!("ID: {} waiting for input!", &self.id);
         let input_data;
 
-        match self.input.recv_timeout(std::time::Duration::from_millis(100)) {
+        match self.input.recv_timeout(std::time::Duration::from_millis(100)) { // add some iterators here to add multi in-multi out functionality
             (Ok(data), _) => input_data = Some(data),
             (Err(RecvTimeoutError), true) => {
                 //println!("ID: {} failed to receive!", &self.id);
