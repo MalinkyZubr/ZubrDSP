@@ -1,6 +1,7 @@
 #![feature(trait_alias)]
 #![feature(specialization)]
 #![feature(mpmc_channel, portable_simd, test)]
+#![feature(generic_const_exprs)]
 
 mod pipeline;
 mod byte_line;

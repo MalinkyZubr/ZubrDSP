@@ -5,6 +5,11 @@ use crate::pipeline::pipeline::RadioPipeline;
 use super::pipeline_thread::PipelineThread;
 
 
+pub enum Assert<const CHECK: bool> {}
+pub trait IsTrue {}
+impl IsTrue for Assert<true> {}
+
+
 pub trait Source {}
 pub trait Sink {}
 
@@ -57,7 +62,14 @@ impl<T: Sharable> RealReceiver<T> {
     }
 }
 
-pub trait PipelineStep<I: Send, O: Send> : Send {
+const fn valid_io_ratio(ni: usize, no: usize) -> bool {
+    ni == 1 || no == 1
+}
+
+pub trait PipelineStep<I: Send, O: Send, const NI: usize = 1, const NO: usize = 1> : Send
+where
+    Assert<{valid_io_ratio(NI, NO)}>: IsTrue 
+{
     fn run(&mut self, input: Option<I>) -> O;
 }
 
@@ -70,7 +82,7 @@ pub trait HasID {
     fn set_id(&mut self, id: String);
 }
 
-pub struct PipelineNode<I: Sharable, O: Sharable> {
+pub struct PipelineNode<I: Sharable, O: Sharable, const NI: usize = 1, const NO: usize = 1> {
     pub input: RealReceiver<I>,
     pub output: RealSender<O>,
     pub id: String
@@ -97,7 +109,7 @@ impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> {
                 //println!("ID: {} failed to receive!", &self.id);
                 return PipelineError::ReceiveError
             }
-            (Err(RecvTimeoutError), false) => input_data = None
+            (Err(RecvTimeoutError), false) => input_data = None // make into separate functiopn
         }
 
         //println!("ID: {} received!", &self.id);
@@ -122,6 +134,17 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
             output: RealSender::Dummy,
             id: String::from("")
         }
+    }
+
+    fn siso_call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineError {
+    }
+
+    fn miso_call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineError {
+        
+    }
+    
+    fn simo_call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineError {
+
     }
 
     pub fn attach<F: Sharable>(mut self, id: String, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
