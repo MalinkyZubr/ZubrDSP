@@ -27,8 +27,9 @@ pub struct ConvolutionalEncoder {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalEncoder {
-    fn run(&mut self, input: Option<Vec<u8>>) -> Vec<u8> {
-        self.consumer.consume(&input.unwrap())
+    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
+        // Remove Option handling and use input directly
+        self.consumer.consume(&input)
     }
 }
 

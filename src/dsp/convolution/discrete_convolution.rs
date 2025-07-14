@@ -43,8 +43,7 @@ impl DiscreteConvolution {
 
 
 impl PipelineStep<Vec<f32>, Vec<f32>> for DiscreteConvolution {
-    fn run(&mut self, input: Option<Vec<f32>>) -> Vec<f32> {
-        let input = input.unwrap();
+    fn run(&mut self, input: Vec<f32>) -> Vec<f32> {
         self.convolve_input(input)
     }
 }

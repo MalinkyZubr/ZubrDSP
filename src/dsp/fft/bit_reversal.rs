@@ -213,8 +213,7 @@ impl FFTBitReversal {
 
 
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FFTBitReversal {    
-    fn run(&mut self, input: Option<Vec<Complex<f32>>>) -> Vec<Complex<f32>> {
-        let mut input = input.unwrap();
+    fn run(&mut self, input: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
         if self.is_ifft {
             return self.ifft(input);
         }

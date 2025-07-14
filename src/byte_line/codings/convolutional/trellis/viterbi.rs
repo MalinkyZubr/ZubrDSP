@@ -166,7 +166,7 @@ impl ViterbiOpCore {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ViterbiOpCore {
-    fn run(&mut self, input: Option<Vec<u8>>) -> Vec<u8> {
-        self.viterbi(&input.unwrap()).1
+    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
+        self.viterbi(&input).1
     }
 }

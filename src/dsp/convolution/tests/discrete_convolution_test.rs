@@ -11,7 +11,7 @@ mod convolution_test {
         let input_vector = vec![0.5, 2.0];
         let result_true = vec![0.5, 2.5];
 
-        let result_exp = convolver.run(Some(input_vector));
+        let result_exp = convolver.run(input_vector);
 
         assert_eq!(result_exp, result_true);
     }
@@ -22,7 +22,7 @@ mod convolution_test {
 
         b.iter(|| {
             let input_vector = vec![1.0; 2048];
-            convolver.run(Some(input_vector));
+            convolver.run(input_vector);
         })
     }
 }

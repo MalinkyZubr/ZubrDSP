@@ -21,7 +21,8 @@ impl Unit for () {
 pub enum PipelineError {
     SendError,
     ReceiveError,
-    Ok
+    Ok,
+    Timeout
 }
 
 enum RealSender<T: Sharable> {
@@ -58,7 +59,7 @@ impl<T: Sharable> RealReceiver<T> {
 }
 
 pub trait PipelineStep<I: Send, O: Send> : Send {
-    fn run(&mut self, input: Option<I>) -> O;
+    fn run(&mut self, input: I) -> O;
 }
 
 pub trait CallableNode<I: Sharable, O: Sharable> : Send {
@@ -138,19 +139,15 @@ impl<I: Sharable, O: Sharable> HasID for PipelineNode<I, O> {
 impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> {
     fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineError {
         //println!("ID: {} waiting for input!", &self.id);
-        let input_data;
 
-        match self.input.recv_timeout(std::time::Duration::from_millis(100)) {
-            (Ok(data), _) => input_data = Some(data),
-            (Err(RecvTimeoutError), true) => {
-                //println!("ID: {} failed to receive!", &self.id);
-                return PipelineError::ReceiveError
-            }
-            (Err(RecvTimeoutError), false) => input_data = None
-        }
+        let received_result = self.receive();
+        match received_result.1 {
+            PipelineError::Ok => (),
+            _ => return received_result.1
+        };
 
         //println!("ID: {} received!", &self.id);
-        let output_data: O = step.run(input_data);
+        let output_data: O = step.run(received_result.0.unwrap());
 
         let return_error = match self.output.send(output_data) {
             Ok(()) => PipelineError::Ok,
@@ -170,6 +167,19 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
             input: RealReceiver::Dummy,
             output: RealSender::Dummy,
             id: String::from("")
+        }
+    }
+
+    fn receive(&mut self) -> (Option<I>, PipelineError) { // make interruption of the process an async process, dont use timeouts. Wastes compute
+        match self.input.recv_timeout(std::time::Duration::from_millis(100)) { // add some iterators here to add multi in-multi out functionality
+            (Ok(data), _) => (Some(data), PipelineError::Ok),
+            (Err(RecvTimeoutError), true) => {
+                //println!("ID: {} failed to receive!", &self.id);
+                (None, PipelineError::ReceiveError)
+            }
+            (Err(RecvTimeoutError), false) => {
+                (None, PipelineError::Timeout)
+            } // make into separate function
         }
     }
 

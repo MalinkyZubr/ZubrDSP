@@ -74,8 +74,7 @@ impl PhaseVectorGenerator {
 }
 
 impl PipelineStep<Vec<u8>, Vec<f32>> for PhaseVectorGenerator {
-    fn run(&mut self, input: Option<Vec<u8>>) -> Vec<f32> {
-        let input = input.unwrap();
+    fn run(&mut self, input: Vec<u8>) -> Vec<f32> {
         let result = self.generate_phase(&input);
         return result;
     }

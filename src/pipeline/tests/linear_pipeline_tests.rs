@@ -11,7 +11,7 @@ mod node_tests {
         receiver: mpsc::Receiver<u32>
     }
     impl PipelineStep<(), u32> for Dummy1 {
-        fn run(&mut self, input: Option<()>) -> u32 {
+        fn run(&mut self, input: ()) -> u32 {
             let input = self.receiver.recv_timeout(std::time::Duration::from_millis(100)).unwrap_or(0);
             input + 1
         }
@@ -20,15 +20,15 @@ mod node_tests {
 
     struct Dummy2{}
     impl PipelineStep<u32, u32> for Dummy2 {
-        fn run(&mut self, input: Option<u32>) -> u32 {
-            input.unwrap() + 1
+        fn run(&mut self, input: u32) -> u32 {
+            input + 1
         }
     }
 
     struct Dummy3{}
     impl PipelineStep<u32, f32> for Dummy3 {
-        fn run(&mut self, input: Option<u32>) -> f32 {
-            return (input.unwrap() + 1) as f32;
+        fn run(&mut self, input: u32) -> f32 {
+            return (input + 1) as f32;
         }
     }
 
@@ -36,8 +36,8 @@ mod node_tests {
         sender: mpsc::Sender<f32>,
     }
     impl PipelineStep<f32, ()> for Dummy4 {
-        fn run(&mut self, input: Option<f32>) -> () {
-            self.sender.send(input.unwrap()).unwrap();
+        fn run(&mut self, input: f32) -> () {
+            self.sender.send(input).unwrap();
         }
     }
     impl Sink for Dummy4 {}

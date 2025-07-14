@@ -4,7 +4,7 @@ use std::sync::{Mutex, Arc, RwLock, MutexGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::Instant;
-use super::prototype::{PipelineStep, PipelineNode, CallableNode, Sharable, HasID};
+use super::prototype::{PipelineStep, PipelineNode, CallableNode, Sharable, HasID, PipelineError};
 
 
 pub struct PipelineThread {
@@ -53,7 +53,12 @@ impl PipelineThread {
             while state.load(Ordering::Acquire) {
                 //dbg!("I SHIT WHERE I EAT");
                 let start_time = Instant::now();
-                node.call(&mut step);
+                let return_code = node.call(&mut step);
+
+                match return_code {
+                    PipelineError::Ok => {},
+                    _ => continue // need more comprehensive handling
+                }
 
                 let execution_time = start_time.elapsed().as_millis() as u64;
                 execution_time_storage.store(execution_time, Ordering::SeqCst);

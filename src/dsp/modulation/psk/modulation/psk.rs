@@ -55,8 +55,7 @@ impl PSKModulator {
 }
 
 impl PipelineStep<Vec<f32>, Vec<f32>> for PSKModulator {
-    fn run(&mut self, input: Option<Vec<f32>>) -> Vec<f32> {
-        let input = input.unwrap();
+    fn run(&mut self, input: Vec<f32>) -> Vec<f32> {
         let result = self.psk_modulate(&input);
 
         return result;
