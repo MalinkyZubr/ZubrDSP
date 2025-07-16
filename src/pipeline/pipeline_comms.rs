@@ -2,11 +2,11 @@ use tokio::sync::mpsc::{Receiver, Sender, error::{SendError, TryRecvError, TrySe
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Notify;
-use crate::pipeline::errors::PipelineError;
+use crate::pipeline::errors::{CommType, PipelineCommResult};
 use super::pipeline_traits::Sharable;
 
 
-#[derive(Debug, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Message<T: Sharable> {
     Data(T),
     Kill
@@ -21,71 +21,101 @@ impl<T: Sharable> Message<T> {
 }
 
 
-pub enum RealSender<T: crate::pipeline::pipeline_traits::Sharable> {
+pub enum WrappedSender<T: Sharable> {
     Real(Sender<Message<T>>),
     Dummy
 }
 
 
 // turn all these to be async
-impl<T: crate::pipeline::pipeline_traits::Sharable> RealSender<T> {
-    pub async fn send(&mut self, data: T) -> Result<(), SendError<Message<T>>> {
+impl<T: Sharable> WrappedSender<T> {
+    pub async fn send(&mut self, data: T) -> PipelineCommResult<()> {
         match self {
-            RealSender::Real(sender) => sender.send(Message::Data(data)).await,
-            RealSender::Dummy => Result::Ok(())
+            WrappedSender::Real(sender) => {
+                let result = sender.send(Message::Data(data)).await;
+                match result {
+                    Err(SendError(message)) => PipelineCommResult::CommError(CommType::Sender),
+                    Ok(()) => PipelineCommResult::Ok(())
+                }
+            },
+            WrappedSender::Dummy => PipelineCommResult::ResourceNotExist
         }
     }
-
-    pub fn try_send(&mut self, data: T) -> (Result<(), TrySendError<Message<T>>>) {
-        match self {
-            RealSender::Real(sender) => sender.try_send(Message::Data(data)),
-            RealSender::Dummy => Result::Ok(())
-        }
-    }
+    // pub fn try_send(&mut self, data: T) -> PipelineCommResult<()> {
+    //     match self {
+    //         WrappedSender::Real(sender) => sender.try_send(Message::Data(data)),
+    //         WrappedSender::Dummy => Result::Ok(())
+    //     }
+    // }
 }
 
-pub enum RealReceiver<T: crate::pipeline::pipeline_traits::Sharable> {
+pub enum WrappedReceiver<T: Sharable> {
     Real(Receiver<Message<T>>),
     Dummy
 }
-impl<T: crate::pipeline::pipeline_traits::Sharable> RealReceiver<T> {
-    pub async fn recv(&mut self) -> (Option<Message<T>>, bool) {
+
+impl<T: Sharable> WrappedReceiver<T> {
+    pub async fn recv(&mut self) -> PipelineCommResult<Message<T>> {
         match self {
-            RealReceiver::Real(receiver) => (receiver.recv().await, true),
-            RealReceiver::Dummy => (None, false)
+            WrappedReceiver::Real(receiver) => {
+                let result = receiver.recv().await;
+                match result {
+                    None => PipelineCommResult::CommError(CommType::Receiver),
+                    Some(message) => PipelineCommResult::Ok(message),
+                }
+            },
+            WrappedReceiver::Dummy => PipelineCommResult::ResourceNotExist
         }
     }
 
     // pub fn recv_timeout(&mut self, timeout: core::time::Duration) -> (Result<T, RecvTimeoutError>, bool) {
     //     match self {
-    //         RealReceiver::Real(receiver) => (receiver.recv_timeout(timeout), true),
-    //         RealReceiver::Dummy => (Result::Err(RecvTimeoutError::Timeout), false)
+    //         WrappedReceiver::Real(receiver) => (receiver.recv_timeout(timeout), true),
+    //         WrappedReceiver::Dummy => (Result::Err(RecvTimeoutError::Timeout), false)
     //     }
     // }
 }
 
 
-pub fn wrapped_channel<T: Sharable>(buffer_size: usize) -> ((RealSender<Message<T>>, RealSender<Message<T>>), RealReceiver<Message<T>>) {
+pub fn wrapped_channel<T: Sharable>(buffer_size: usize) -> ((WrappedSender<Message<T>>, WrappedSender<Message<T>>), WrappedReceiver<Message<T>>) {
     let (tx1, rx) = channel(buffer_size);
     let tx2 = tx1.clone(); // jack the (async) ripper
 
     (
-        (RealSender::Real(tx1), RealSender::Real(tx2)),
-        RealReceiver::Real(rx)
+        (WrappedSender::Real(tx1), WrappedSender::Real(tx2)),
+        WrappedReceiver::Real(rx)
     )
 }
 
 
+pub struct SingleSender<T: Sharable> {
+    sender: WrappedSender<T>
+}
+impl <T: Sharable> SingleSender<T> {
+    pub fn send_single(&mut self, output_data: T) -> PipelineError {
+        let return_error = match self.sender.try_send(output_data) {
+            Ok(()) => PipelineError::Ok,
+            Err(_msg) => PipelineError::SendError
+        };
+
+        return return_error;
+    }
+}
+
+
 pub struct MultiSender<T: Sharable> {
-    senders: Vec<RealSender<T>>
+    senders: Vec<WrappedSender<T>>
 }
 impl<T: Sharable> MultiSender<T> {
-    pub fn send_all(&mut self, mut data: Vec<T>) {
+    pub async fn send_all(&mut self, mut data: Vec<T>) -> Vec<PipelineCommResult<()>> {
         data.reverse();
+        let mut results = Vec::with_capacity(data.len());
         for index in 0..data.len() {
             let data_point = data.pop().unwrap();
-            self.senders[index].try_send(data_point);
+            results.push(self.senders[index].send(data_point).await); // evaluate this decision later
         }
+        
+        return results;
     }
 }
 
@@ -102,88 +132,66 @@ impl<T: Sharable> MultiReceiver<T> {
     // pub fn new() -> (MultiReceiver<T>, Notify) {
     //
     // }
-    pub fn extract_data(&mut self, data: &mut Vec<T>) { // assume space already allocated for the data vector
+    pub fn extract_data(&mut self, mut data: Vec<T>) -> Vec<PipelineCommResult<T>> { // assume space already allocated for the data vector
         data.copy_from_slice(self.output.read().unwrap().as_slice());
         self.read_finish_notifier.notify_waiters();
     }
 
-    fn spawn_task(&mut self, data_index: usize, mut receiver: RealReceiver<Message<T>>, output_index: usize) {
+    fn spawn_task(&mut self, mut receiver: WrappedReceiver<Message<T>>, output_index: usize) {
         let data_buffer = self.output.clone();
         let counter = self.completion_count.clone();
         let necessary_receives = self.num_receivers.clone();
-        let mut done_notifier = self.done_notifier.clone();
-        let mut read_finish_notifier = self.read_finish_notifier.clone();
+        let done_notifier = self.done_notifier.clone();
+        let read_finish_notifier = self.read_finish_notifier.clone();
 
-        self.receivers.push(
-            tokio::spawn(
-                async move {
-                    let mut runflag = true;
+        self.receivers.push(tokio::spawn(async move {
+            let mut runflag = true;
 
-                    while runflag {
-                        let message = receiver.recv().await;
+            while runflag {
+                let message = receiver.recv().await;
 
-                        let mut data = None;
+                let mut data = None;
 
-                        match message {
-                            (Some(Message::Data(value)), true) => data = value.get(),
-                            (Some(Message::Kill), true) => {runflag = false; continue},
-                            (_, false) => runflag = panic!("Receiver receive error"), // what do here
-                            (None, _) => panic!("Receiver got None message")
-                        }
-
-                        {
-                            let mut data_buffer = data_buffer.write().unwrap();
-                            data_buffer[output_index] = data.unwrap();
-                        }
-
-                        counter.fetch_add(1, Ordering::SeqCst);
-                        if counter.load(Ordering::SeqCst) == necessary_receives {
-                            done_notifier.notify_waiters();
-                            counter.store(0, Ordering::SeqCst);
-                        }
-
-                        read_finish_notifier.notified().await;
-                    }
+                match message {
+                    (Some(Message::Data(value)), true) => data = value.get(),
+                    (Some(Message::Kill), true) => {runflag = false; continue},
+                    (_, false) => runflag = panic!("Receiver receive error"), // what do here
+                    (None, _) => panic!("Receiver got None message")
                 }
-            )
-        )
+
+                {
+                    let mut data_buffer = data_buffer.write().unwrap();
+                    data_buffer[output_index] = data.unwrap();
+                }
+
+                counter.fetch_add(1, Ordering::SeqCst);
+                if counter.load(Ordering::SeqCst) == necessary_receives {
+                    done_notifier.notify_waiters();
+                    counter.store(0, Ordering::SeqCst);
+                }
+
+                read_finish_notifier.notified().await;
+            }
+        }))
     }
 }
 
 
 pub enum NodeCommunicator<I: Sharable, O: Sharable> {
-    SISO(RealReceiver<I>, RealSender<O>),
-    SIMO(RealReceiver<I>, MultiSender<O>),
-    MISO(MultiReceiver<I>, RealSender<O>)
+    SISO(SingleReceiver<I>, SingleSender<O>),
+    SIMO(SingleReceiver<I>, MultiSender<O>),
+    MISO(MultiReceiver<I>, SingleSender<O>)
 }
 impl<I: Sharable, O: Sharable> NodeCommunicator<I, O> {
-    pub async fn receive(&mut self) -> (Option<I>, PipelineError ) {
+    pub async fn receive(&mut self) -> Vec<PipelineCommResult<I>> {
         match &mut self {
             NodeCommunicator::SISO(receiver, _) |
-            NodeCommunicator::SIMO(receiver, _) => receiver.recv(),
-            NodeCommunicator::MISO(receiver, _) => panic!("MISO not implemented")
-        }
-    }
-    
-    fn receive_single(&mut self) -> (Option<I>, PipelineError) { // make interruption of the process an async process, dont use timeouts. Wastes compute
-        match self.input.recv_timeout(std::time::Duration::from_millis(100)) { // add some iterators here to add multi in-multi out functionality
-            (Ok(data), _) => (Some(data), PipelineError::Ok),
-            (Err(RecvTimeoutError), true) => {
-                //println!("ID: {} failed to receive!", &self.id);
-                (None, PipelineError::ReceiveError)
+            NodeCommunicator::SIMO(receiver, _) => {
+                
+            },
+            NodeCommunicator::MISO(receiver, _) => {
+                
             }
-            (Err(RecvTimeoutError), false) => {
-                (None, PipelineError::Timeout)
-            } // make into separate function
         }
-    }
-
-    fn send_single(&mut self, output_data: O) -> PipelineError {
-        let return_error = match self.output.send(output_data) {
-            Ok(()) => PipelineError::Ok,
-            Err(_msg) => PipelineError::SendError
-        };
-
-        return return_error;
     }
 }

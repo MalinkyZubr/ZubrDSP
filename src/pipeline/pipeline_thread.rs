@@ -80,7 +80,7 @@ impl PipelineThread {
             self.pipeline_step_thread = Some(
                 thread::spawn(move || {
                     Self::thread_operation(
-                        step, 
+                        step,
                         node,
                         kill_flag_clone,
                         execution_clone,
