@@ -18,5 +18,5 @@ ratatui = "0.29.0"
 strum = "0.26.3"
 rusb = "0.9.4"
 rustfft = "6"
-
+tokio = { version = "1.46.1", features = ["sync", "rt"] }
 

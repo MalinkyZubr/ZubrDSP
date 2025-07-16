@@ -4,7 +4,9 @@ use std::sync::{Mutex, Arc, RwLock, MutexGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::Instant;
-use super::prototype::{PipelineStep, PipelineNode, CallableNode, Sharable, HasID, PipelineError};
+use super::pipeline_step::{PipelineStep, PipelineNode, CallableNode};
+use super::errors::PipelineError;
+use super::pipeline_traits::{HasID, Sharable};
 
 
 pub struct PipelineThread {

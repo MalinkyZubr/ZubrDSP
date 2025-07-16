@@ -3,7 +3,6 @@
 // type adapters (primarily modulators) are much more important and baked directly into a proper DSP pipeline for radio transmission and reception
 
 use super::pipeline_thread::PipelineThread;
-use super::prototype::{PipelineStep, PipelineNode, Unit};
 //use super::dummy::{dummy_thread_function, DummyManager, DummyRunner};
 use std::thread::{self, JoinHandle};
 use std::sync::mpsc;

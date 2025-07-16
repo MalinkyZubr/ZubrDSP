@@ -5,7 +5,7 @@ use crate::dsp::filtering::fir::ideal_response::impulse_response::FIRTransferFun
 use crate::dsp::filtering::fir::windows::window::{apply_window, WindowFunction};
 use super::ideal_response::*;
 use super::windows::*;
-use crate::pipeline::prototype::PipelineStep;
+use crate::pipeline::pipeline_step::PipelineStep;
 
 
 pub struct FirFilter {

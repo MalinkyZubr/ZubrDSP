@@ -2,7 +2,7 @@
 pub mod psk_tests {
     use crate::dsp::modulation::psk::modulation::phasegen::{PSKPoint, PhaseVectorGenerator};
     use crate::dsp::modulation::psk::modulation::psk::{PSKModulator, BasisType};
-    use crate::pipeline::prototype::PipelineStep;
+    use crate::pipeline::pipeline_step::PipelineStep;
     use std::f32::consts::PI;
 
     #[test]

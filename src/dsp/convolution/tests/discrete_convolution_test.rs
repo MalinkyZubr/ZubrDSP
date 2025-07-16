@@ -1,6 +1,6 @@
 mod convolution_test {
     use crate::dsp::convolution::discrete_convolution::DiscreteConvolution;
-    use crate::pipeline::prototype::PipelineStep;
+    use crate::pipeline::pipeline_step::PipelineStep;
     use super::*;
     extern crate test;
 

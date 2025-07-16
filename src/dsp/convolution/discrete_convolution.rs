@@ -1,6 +1,6 @@
 use std::mem;
 use std::slice;
-use crate::pipeline::prototype::*;
+use crate::pipeline::pipeline_step::*;
 
 
 pub struct DiscreteConvolution {

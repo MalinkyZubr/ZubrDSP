@@ -3,7 +3,8 @@ mod node_tests {
     use std::sync::mpsc;
     use std::thread::sleep;
     use crate::pipeline::pipeline::RadioPipeline;
-    use crate::pipeline::prototype::{PipelineNode, PipelineStep, Unit, Source, Sink};
+    use crate::pipeline::pipeline_step::{PipelineNode, PipelineStep};
+    use crate::pipeline::pipeline_traits::{Source, Sink};
     use super::*;
     
     

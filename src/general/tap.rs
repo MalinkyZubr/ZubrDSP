@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::sync::mpsc::Sender;
-use crate::pipeline::prototype::PipelineStep;
+use crate::pipeline::pipeline_step::PipelineStep;
 
 pub struct TapStep<T> {
     tap_sender: Sender<T>

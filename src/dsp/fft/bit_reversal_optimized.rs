@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::general::parallel_computation::{self, *};
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use crate::pipeline::prototype::PipelineStep;
+use crate::pipeline::pipeline_step::PipelineStep;
 use super::bit_reversal::*;
 
 

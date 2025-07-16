@@ -1,4 +1,4 @@
-use crate::pipeline::prototype::PipelineStep;
+use crate::pipeline::pipeline_step::PipelineStep;
 use std::f32;
 
 
