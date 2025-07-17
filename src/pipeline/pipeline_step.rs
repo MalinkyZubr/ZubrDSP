@@ -3,9 +3,9 @@ use std::sync::mpsc;
 use std::sync::mpsc::{channel, Receiver, Sender, RecvError, SendError, SyncSender, RecvTimeoutError};
 use crate::pipeline::pipeline::RadioPipeline;
 use super::pipeline_thread::PipelineThread;
-use super::errors::PipelineError;
+use super::pipeline_results::PipelineCommResult;
 use super::pipeline_traits::{Sharable, Unit, HasID, Source, Sink};
-use super::pipeline_comms::{RealReceiver, RealSender, NodeCommunicator, MultiReceiver, MultiSender};
+use super::pipeline_comms::{WrappedReceiver, WrappedSender, NodeCommunicator, MultiReceiver, MultiSender, PipelineCommHandler};
 
 
 pub trait PipelineStep<I: Send, O: Send> : Send {
@@ -13,7 +13,7 @@ pub trait PipelineStep<I: Send, O: Send> : Send {
 }
 
 pub trait CallableNode<I: Sharable, O: Sharable> : Send {
-    fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineError;
+    fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineCommResult<()>;
 }
 
 
@@ -34,12 +34,12 @@ impl<I: Sharable, O: Sharable> HasID for PipelineNode<I, O> {
 
 
 impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> {
-    fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineError {
+    fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineCommResult<()> {
         //println!("ID: {} waiting for input!", &self.id);
 
         let received_result = self.receive();
         match received_result.1 {
-            PipelineError::Ok => (),
+            PipelineCommResult::Ok(_) => (),
             _ => return received_result.1
         };
 
@@ -59,6 +59,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
             id: String::from("")
         }
     }
+    pub fn close() {}
 
     fn receive_single(&mut self) -> (Option<I>, PipelineError) { // make interruption of the process an async process, dont use timeouts. Wastes compute
         match self.input.recv_timeout(std::time::Duration::from_millis(100)) { // add some iterators here to add multi in-multi out functionality

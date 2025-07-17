@@ -4,8 +4,9 @@ use std::sync::{Mutex, Arc, RwLock, MutexGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::Instant;
+use tokio::sync::mpsc as AsyncMPSC;
 use super::pipeline_step::{PipelineStep, PipelineNode, CallableNode};
-use super::errors::PipelineError;
+use super::pipeline_results::PipelineCommResult;
 use super::pipeline_traits::{HasID, Sharable};
 
 
@@ -58,7 +59,7 @@ impl PipelineThread {
                 let return_code = node.call(&mut step);
 
                 match return_code {
-                    PipelineError::Ok => {},
+                    PipelineCommResult::Ok(()) => {},
                     _ => continue // need more comprehensive handling
                 }
 
