@@ -4,18 +4,19 @@ use std::sync::{Mutex, Arc, RwLock, MutexGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::Instant;
+use crossterm::ExecutableCommand;
 use tokio::sync::mpsc as AsyncMPSC;
-use super::pipeline_step::{PipelineStep, PipelineNode, CallableNode};
-use super::pipeline_results::PipelineCommResult;
+use super::pipeline_step::{PipelineStep, PipelineNode, CallableNode, PipelineStepResult};
 use super::pipeline_traits::{HasID, Sharable};
 
 
 pub struct PipelineThread {
-    state: Arc<AtomicBool>,
+    runflag: Arc<AtomicBool>,
     kill_flag: Arc<AtomicBool>,
     execution_time: Arc<AtomicU64>,
     pipeline_step_thread: Option<JoinHandle<()>>,
     notify_channel: (mpsc::SyncSender<()>, Option<mpsc::Receiver<()>>),
+    return_code: Arc<RwLock<PipelineStepResult>>,
     pub id: String
 }
 
@@ -28,11 +29,12 @@ impl PipelineThread {
         let notify_channel = mpsc::sync_channel(1);
 
         let mut thread = PipelineThread {
-            state: shared_state,
+            runflag: shared_state,
             kill_flag,
             execution_time,
             pipeline_step_thread: None,
             notify_channel: (notify_channel.0, Some(notify_channel.1)),
+            return_code: Arc::new(RwLock::new(PipelineStepResult::Success)),
             id: String::from("NoID"),
         };
         
@@ -40,80 +42,60 @@ impl PipelineThread {
         
         return thread;
     }
-    
-    fn thread_operation<I: Sharable, O: Sharable>
-    (
-        mut step: impl PipelineStep<I, O> + 'static, mut node: impl CallableNode<I, O> + 'static, 
-        kill_flag: Arc<AtomicBool>, 
-        execution_time_storage: Arc<AtomicU64>, 
-        receiver: mpsc::Receiver<()>, 
-        state: Arc<AtomicBool>) 
-    {
-        while !kill_flag.load(Ordering::Acquire) {
-            let _ = receiver.recv_timeout(std::time::Duration::from_millis(1000));
-            //dbg!("BULLSHIT!");
-
-            while state.load(Ordering::Acquire) {
-                //dbg!("I SHIT WHERE I EAT");
-                let start_time = Instant::now();
-                let return_code = node.call(&mut step);
-
-                match return_code {
-                    PipelineCommResult::Ok(()) => {},
-                    _ => continue // need more comprehensive handling
-                }
-
-                let execution_time = start_time.elapsed().as_millis() as u64;
-                execution_time_storage.store(execution_time, Ordering::SeqCst);
-            }
-        }
-    }
 
     fn instantiate_thread<I: Sharable, O: Sharable>
-    (&mut self, step: impl PipelineStep<I, O> + 'static, node: impl CallableNode<I, O> + 'static + HasID) {
-            //let state_copy = Arc::new(self.state
-            let state_clone = self.state.clone();
+    (&mut self, mut step: impl PipelineStep<I, O> + 'static, mut node: impl CallableNode<I, O> + 'static + HasID) {
+            //let state_copy = Arc::new(self.runflag
+            let runflag_clone = self.runflag.clone();
             let kill_flag_clone = self.kill_flag.clone();
             let execution_clone = self.execution_time.clone();
             let receiver = self.notify_channel.1.take().unwrap();
+            let return_code_clone = self.return_code.clone();
             self.id = node.get_id();
 
             self.pipeline_step_thread = Some(
                 thread::spawn(move || {
-                    Self::thread_operation(
-                        step,
-                        node,
-                        kill_flag_clone,
-                        execution_clone,
-                        receiver,
-                        state_clone
-                    );
+                    while !kill_flag_clone.load(Ordering::Acquire) {
+                        let _ = receiver.recv_timeout(std::time::Duration::from_millis(1000));
+                        //dbg!("BULLSHIT!");
+
+                        while runflag_clone.load(Ordering::Acquire) {
+                            //dbg!("I SHIT WHERE I EAT");
+                            let start_time = Instant::now();
+                            let return_code_received = node.call(&mut step);
+
+                            *return_code_clone.write().unwrap() = return_code_received;
+
+                            let execution_time = start_time.elapsed().as_millis() as u64;
+                            execution_clone.store(execution_time, Ordering::SeqCst);
+                        }
+                    }
                 })
             );
     }
 
     pub fn start(&mut self) {
-        self.state.store(true, Ordering::Release);
-        _ = self.notify_channel.0.send(());
+        self.runflag.store(true, Ordering::Release);
+        _ = self.notify_channel.0.try_send(());
         sleep(std::time::Duration::from_millis(10));
         //dbg!("STARTED");
     }
 
     pub fn stop(&mut self) {
-        self.state.store(false, Ordering::Release);
-        _ = self.notify_channel.0.send(());
+        self.runflag.store(false, Ordering::Release);
+        _ = self.notify_channel.0.try_send(());
         sleep(std::time::Duration::from_millis(10));
     }
 
     pub fn kill(&mut self) {
         match self.pipeline_step_thread.take() {
             Some(step_thread) => {
-                self.state.store(false, Ordering::Release);
+                self.runflag.store(false, Ordering::Release);
                 self.kill_flag.store(true, Ordering::Release);
                 
                 sleep(std::time::Duration::from_millis(10));
 
-                _ = self.notify_channel.0.send(());
+                _ = self.notify_channel.0.try_send(());
 
                 //println!("killing thread {}", self.id);
                 _ = step_thread.join();

@@ -9,7 +9,6 @@ mod endpoints;
 mod sources;
 pub mod valid_types;
 pub mod pipeline_traits;
-mod pipeline_results;
 mod pipeline_comms;
 //mod dummy;
 //mod curses;

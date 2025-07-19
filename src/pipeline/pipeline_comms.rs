@@ -1,271 +1,149 @@
-use tokio::sync::mpsc::{Receiver, Sender, error::{SendError, TryRecvError, TrySendError}, channel};
-use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::sync::Notify;
-use crate::pipeline::pipeline_results::{CommType, PipelineCommResult};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel, SendError, RecvTimeoutError};
+use std::time::Duration;
 use super::pipeline_traits::Sharable;
 
 
-#[derive(Debug, Clone, Copy)]
-pub enum ControlPlaneDirective {
-    Start,
-    Stop,
-    Kill
+#[derive(Debug, Clone)]
+pub enum ReceiveType<T: Sharable> {
+    Single(T),
+    Multi(Vec<T>)
 }
-#[derive(Debug, Clone, Copy)]
-pub enum Message<T: Sharable> {
-    Data(T),
-    Directive(ControlPlaneDirective)
+
+
+pub struct WrappedReceiver<T: Sharable> {
+    receiver: Receiver<T>,
 }
-impl<T: Sharable> Message<T> {
-    pub fn unwrap(self) -> T {
-        match self {
-            Message::Data(value) => value,
-            Message::Directive(_) => panic!("Cannot unwrap a message")
-        }
+
+impl<T: Sharable> WrappedReceiver<T> {
+    pub fn new(receiver: Receiver<T>) -> Self { 
+        WrappedReceiver { receiver }
     }
-    pub fn get_data(&mut self) -> &mut T {
-        match self {
-            Message::Data(t) => t,
-            _ => panic!("Could not get Data")
-        }
+    pub fn recv(&mut self, timeout: u64, retries: usize) -> Result<T, RecvTimeoutError> {
+        Self::merciful_receive(&mut self.receiver, timeout, retries)
     }
-}
+    fn merciful_receive(receiver: &mut Receiver<T>, timeout: u64, retries: usize) -> Result<T, RecvTimeoutError> {
+        let mut retry_num = 0;
+        let mut success_flag = false;
+        
+        let mut result = Err(RecvTimeoutError::Timeout);
 
+        while !success_flag && retry_num < retries {
+            result = receiver.recv_timeout(Duration::from_millis(timeout));
 
-impl<T: Sharable> Message<T> {
-    pub fn get(self) -> Option<T> {
-        match self {
-            Message::Data(value) => Some(value),
-            Message::Directive(_) => None
-        }
-    }
-}
-
-
-pub trait MessageHandler<T: Sharable, R> {
-    fn handle_message(&mut self, message: Message<T>) -> R;
-}
-
-pub trait ControlPlaneHandler<R> {
-    fn handle_cp_directive(&mut self, message: ControlPlaneDirective) -> R;
-}
-
-pub trait PipelineCommHandler<T: Sharable, R> {
-    fn handle_comm_result(&mut self, message: PipelineCommResult<T>) -> R;
-}
-
-pub trait StatelessMessageHandler<T: Sharable, R> {
-    fn handle_message(message: Message<T>) -> R;
-}
-
-pub trait StatelessControlPlaneHandler<R> {
-    fn handle_cp_directive(message: ControlPlaneDirective) -> R;
-}
-
-
-pub enum WrappedSender<T: Sharable> {
-    Real(Sender<Message<T>>),
-    Dummy
-}
-
-
-// turn all these to be async
-impl<T: Sharable> WrappedSender<T> {
-    pub async fn send(&mut self, data: T) -> PipelineCommResult<()> {
-        match self {
-            WrappedSender::Real(sender) => {
-                let result = sender.send(Message::Data(data)).await;
-                match result {
-                    Err(SendError(message)) => PipelineCommResult::CommError(CommType::Sender),
-                    Ok(()) => PipelineCommResult::Ok(())
-                }
-            },
-            WrappedSender::Dummy => PipelineCommResult::ResourceNotExist
-        }
-    }
-}
-
-pub enum WrappedReceiver<T: Sharable, const ACCEPT_CONTROL_PLANE: bool> {
-    Real(Receiver<Message<T>>),
-    Dummy
-}
-
-impl<T: Sharable, const ACCEPT_CONTROL_PLANE: bool> WrappedReceiver<T, ACCEPT_CONTROL_PLANE> {
-    pub async fn recv(&mut self) -> PipelineCommResult<Message<T>> {
-        match self { 
-            WrappedReceiver::Real(receiver) => {
-                let result = receiver.recv().await;
-                match result {
-                    None => PipelineCommResult::CommError(CommType::Receiver),
-                    Some(message) => self.handle_message(message)
-                }
-            },
-            WrappedReceiver::Dummy => PipelineCommResult::ResourceNotExist
-        }
-    }
-}
-impl<T: Sharable, const ACCEPT_CONTROL_PLANE: bool> MessageHandler<T, PipelineCommResult<Message<T>>> for WrappedReceiver<T, ACCEPT_CONTROL_PLANE> {
-    fn handle_message(&mut self, message: Message<T>) -> PipelineCommResult<Message<T>> {
-        if let Message::Directive(directive) = message && !ACCEPT_CONTROL_PLANE {
-            PipelineCommResult::IllegalDirective
-        }
-        else {
-            PipelineCommResult::Ok(message)
-        }
+            match &result {
+                Err(err) => {
+                    match err { RecvTimeoutError::Timeout => {retry_num += 1; continue}, _ => success_flag = true}
+                },
+                Ok(_) => { success_flag = true; }
+            }
+        };
+        result
     }
 }
 
 
-pub fn wrapped_channel<T: Sharable, const ACCEPT_CONTROL_PLANE: bool>(buffer_size: usize) -> ((WrappedSender<T>, Sender<Message<T>>), WrappedReceiver<T, ACCEPT_CONTROL_PLANE>) {
-    let (tx1, rx) = channel::<Message<T>>(buffer_size);
-    let tx2 = tx1.clone(); // jack the (async) ripper
-
-    (
-        (WrappedSender::Real(tx1), tx2),
-        WrappedReceiver::Real(rx)
-    )
+pub struct SingleReceiver<T: Sharable> {
+    receiver: WrappedReceiver<T>,
+    timeout: u64,
+    retries: usize
 }
-
+impl<T: Sharable> SingleReceiver<T> {
+    pub fn new(receiver: WrappedReceiver<T>, timeout: u64, retries: usize) -> SingleReceiver<T> {
+        SingleReceiver { receiver, timeout,  retries }
+    }
+    pub fn receive(&mut self) -> Result<ReceiveType<T>, RecvTimeoutError> {
+        match self.receiver.recv(self.timeout, self.retries) {
+            Ok(result) => Ok(ReceiveType::Single(result)),
+            Err(err) => Err(err)
+        }
+    }
+}
 
 pub struct MultiSender<T: Sharable> {
-    senders: Vec<WrappedSender<T>>
+    senders: Vec<SyncSender<T>>,
 }
 impl<T: Sharable> MultiSender<T> {
-    pub async fn send_all(&mut self, mut data: Vec<T>) -> Vec<PipelineCommResult<()>> {
-        data.reverse();
-        let mut results = Vec::with_capacity(data.len());
-        for index in 0..data.len() {
-            let data_point = data.pop().unwrap();
-            results.push(self.senders[index].send(data_point).await); // evaluate this decision later
+    pub fn new() -> MultiSender<T> {
+        MultiSender {
+            senders: Vec::new(),
+        }
+    }
+    pub fn send_all(&mut self, mut data: T) -> Result<(), SendError<T>> { // all branches must be ready to receive
+        let mut result = Ok(());
+        
+        for index in 0..self.senders.len() {
+            result = self.senders[index].send(data.clone()); // evaluate this decision later
         }
         
-        return results;
+        result
+    }
+    pub fn add_sender(&mut self, sender: SyncSender<T>) { 
+        self.senders.push(sender);
     }
 }
 
 
 pub struct MultiReceiver<T: Sharable> {
-    receivers: Vec<tokio::task::JoinHandle<()>>,
-    done_notifier: Arc<Notify>,
-    read_finish_notifier: Arc<Notify>,
-    output: Arc<RwLock<Vec<PipelineCommResult<Message<T>>>>>,
-    completion_count: Arc<AtomicUsize>,
-    num_receivers: usize
-}
-struct MultiReceiverFlags {
-    kill_flag: bool,
-    run_flag: bool
+    receivers: Vec<WrappedReceiver<T>>,
+    timeout: u64,
+    retries: usize,
 }
 
 impl<T: Sharable> MultiReceiver<T> {
-    // pub fn new() -> (MultiReceiver<T>, Notify) {
-    //
-    // }
-    pub async fn extract_data(&mut self) -> Vec<PipelineCommResult<Message<T>>> { // assume space already allocated for the data vector
-        self.done_notifier.notified().await;
-        let mut data = Vec::with_capacity(self.output.read().unwrap().len());
-        data.copy_from_slice(self.output.read().unwrap().as_slice());
-        self.read_finish_notifier.notify_waiters();
-
-        return data;
-    }
-
-    fn spawn_task(&mut self, mut receiver: WrappedReceiver<T, true>, output_index: usize) {
-        let data_buffer = self.output.clone();
-        let counter = self.completion_count.clone();
-        let necessary_receives = self.num_receivers.clone();
-        let done_notifier = self.done_notifier.clone();
-        let read_finish_notifier = self.read_finish_notifier.clone();
-
-        self.receivers.push(tokio::spawn(async move {
-            let mut flags = MultiReceiverFlags { kill_flag: false, run_flag: false };
-
-            while !flags.kill_flag {
-                flags.handle_comm_result(receiver.recv().await);
-                
-                while flags.run_flag {
-                    let mut message = receiver.recv().await;
-
-                    message = flags.handle_comm_result(message);
-                    if flags.kill_flag || !flags.run_flag {continue;}
-
-                    {
-                        let mut data_buffer = data_buffer.write().unwrap();
-                        data_buffer[output_index] = message;
-                    }
-
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    if counter.load(Ordering::SeqCst) == necessary_receives {
-                        done_notifier.notify_waiters();
-                        counter.store(0, Ordering::SeqCst);
-                    }
-
-                    read_finish_notifier.notified().await;
-                }   
+    pub fn new(timeout: u64, retries: usize) ->  Self {
+        MultiReceiver { receivers: Vec::new(), timeout, retries }
+    }    
+    pub fn receive(&mut self) -> Result<ReceiveType<T>, RecvTimeoutError> {
+        let mut output = Vec::with_capacity(self.receivers.len());
+        let mut proceed_flag = true;
+        let mut return_value = Ok(ReceiveType::Multi(Vec::new()));
+        
+        for receiver in self.receivers.iter_mut() {
+            let received = receiver.recv(self.timeout, self.retries);
+            match received {
+                Ok(received) => if proceed_flag { output.push(received) }
+                Err(error) => { proceed_flag = false; return_value = Err(error); }
             }
-        }))
-    }
-}
-impl<T: Sharable> PipelineCommHandler<Message<T>, PipelineCommResult<Message<T>>> for MultiReceiverFlags {
-    fn handle_comm_result(&mut self, message: PipelineCommResult<Message<T>>) -> PipelineCommResult<Message<T>> {
-        match message {
-            PipelineCommResult::Ok(message_content) => {
-                let message_content = self.handle_message(message_content);
-                PipelineCommResult::Ok(message_content)
-            },
-            _ => message
-        }
-    }
-}
-impl<T: Sharable> MessageHandler<T, Message<T>> for MultiReceiverFlags {
-    fn handle_message(&mut self, message: Message<T>) -> Message<T> {
-        match message {
-            Message::Directive(directive) => self.handle_cp_directive(directive),
-            _ => ()
         }
         
-        return message;
-    }
-}
-impl ControlPlaneHandler<()> for MultiReceiverFlags {
-    fn handle_cp_directive(&mut self, directive: ControlPlaneDirective) -> () {
-        match directive {
-            ControlPlaneDirective::Kill => {self.kill_flag = true; self.run_flag = false;},
-            ControlPlaneDirective::Stop => {self.run_flag = false;},
-            ControlPlaneDirective::Start => {self.run_flag = true;},
+        if output.len() ==  self.receivers.len() {
+            return_value = Ok(ReceiveType::Multi(output));
         }
+        
+        return_value
+    }
+    pub fn add_receiver(&mut self, receiver: WrappedReceiver<T>) {
+        self.receivers.push(receiver);
     }
 }
 
 
-pub enum NodeCommunicator<I: Sharable, O: Sharable> {
-    SISO(WrappedReceiver<I, false>, WrappedSender<O>),
-    SIMO(WrappedReceiver<I, false>, MultiSender<O>),
-    MISO(MultiReceiver<I>, WrappedSender<O>)
+pub enum NodeReceiver<I: Sharable> {
+    SI(SingleReceiver<I>),
+    MI(MultiReceiver<I>),
+    Dummy
 }
-impl<I: Sharable, O: Sharable> NodeCommunicator<I, O> {
-    pub async fn receive(&mut self) -> Vec<PipelineCommResult<Message<I>>> {
+impl<I: Sharable> NodeReceiver<I> {
+    pub fn receive(&mut self) -> Result<ReceiveType<I>, RecvTimeoutError> {
         match self {
-            NodeCommunicator::SISO(receiver, _) |
-            NodeCommunicator::SIMO(receiver, _) => {
-                vec![receiver.recv().await]
-            },
-            NodeCommunicator::MISO(receiver, _) => {
-                receiver.extract_data().await
-            }
+            NodeReceiver::SI(receiver) => receiver.receive(),
+            NodeReceiver::MI(receiver) => receiver.receive(),
+            NodeReceiver::Dummy => Err(RecvTimeoutError::Disconnected)
         }
     }
-    
-    pub async fn send(&mut self, mut data: Vec<O>) -> Vec<PipelineCommResult<()>> {
+}
+
+pub enum NodeSender<O: Sharable> {
+    SO(SyncSender<O>),
+    MO(MultiSender<O>),
+    Dummy
+}
+impl <O: Sharable> NodeSender<O> {
+    pub fn send(&mut self, data: O) -> Result<(), SendError<O>> {
         match self {
-            NodeCommunicator::SISO(_, sender) |
-            NodeCommunicator::MISO(_, sender) => {
-                vec![sender.send(data.pop().unwrap()).await]
-            }
-            NodeCommunicator::SIMO(_, sender) => {
-                sender.send_all(data).await
-            }
+            NodeSender::SO(sender) => sender.send(data),
+            NodeSender::MO(sender) => sender.send_all(data),
+            NodeSender::Dummy => {Err(SendError(data))}
         }
     }
 }

@@ -13,12 +13,15 @@ use std::sync::Arc;
 pub struct RadioPipeline {
     pub nodes: Vec<PipelineThread>,
     //dummy_manager: DummyManager
-    
+    pub retries: usize,
+    pub timeout: u64,
+    pub backpressure_val: usize
 }
 impl RadioPipeline {
-    pub fn new() -> RadioPipeline {
+    pub fn new(retries: usize, timeout: u64, backpressure_val: usize) -> RadioPipeline {
         RadioPipeline{
             nodes: Vec::new(), 
+            retries, timeout, backpressure_val
             //dummy_manager: DummyManager::new()
         }
     }
