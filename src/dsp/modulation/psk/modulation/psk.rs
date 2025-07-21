@@ -1,4 +1,4 @@
-use crate::pipeline::pipeline_step::PipelineStep;
+use crate::pipeline::api::*;
 use std::f32;
 
 
@@ -55,7 +55,7 @@ impl PSKModulator {
 }
 
 impl PipelineStep<Vec<f32>, Vec<f32>> for PSKModulator {
-    fn run(&mut self, input: Vec<f32>) -> Vec<f32> {
+    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Vec<f32> {
         let result = self.psk_modulate(&input);
 
         return result;

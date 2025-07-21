@@ -3,7 +3,7 @@ use std::sync::mpmc::{RecvError, RecvTimeoutError, SendError};
 use std::sync::mpsc::{Receiver, SyncSender};
 
 
-pub trait Sharable = Send + Sync + Debug + Copy + 'static;
+pub trait Sharable = Send + Sync + Debug + Clone + 'static;
 
 pub trait Source {}
 pub trait Sink {}
@@ -16,7 +16,6 @@ impl Unit for () {
         ()
     }
 }
-
 
 pub trait HasID {
     fn get_id(&self) -> String;

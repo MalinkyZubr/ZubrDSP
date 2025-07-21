@@ -1,4 +1,4 @@
-use crate::pipeline::pipeline_step::PipelineStep;
+use crate::pipeline::api::*;
 use std::f32;
 
 
@@ -74,8 +74,10 @@ impl PhaseVectorGenerator {
 }
 
 impl PipelineStep<Vec<u8>, Vec<f32>> for PhaseVectorGenerator {
-    fn run(&mut self, input: Vec<u8>) -> Vec<f32> {
-        let result = self.generate_phase(&input);
-        return result;
+    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<Vec<f32>, String> {
+        match input {
+            ReceiveType::Single(val) => Ok(self.generate_phase(&val)),
+            _ => Err(String::from(""))
+        }
     }
 }

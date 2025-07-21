@@ -1,6 +1,5 @@
 use num::Complex;
 
-
 pub trait ValidFloat {}
 impl ValidFloat for f32 {}
 impl ValidFloat for f64 {}

@@ -14,9 +14,10 @@ pub enum PipelineStepResult {
     ComputeError(String)
 }
 
-pub trait PipelineStep<I: Sharable, O: Sharable> : Sharable {
+pub trait PipelineStep<I: Sharable, O: Sharable> : Send + 'static {
     fn run(&mut self, input: ReceiveType<I>) -> Result<O, String>;
 }
+
 
 #[derive(Debug, Copy, Clone)]
 struct DummyStep {}
@@ -25,6 +26,7 @@ impl<T: Sharable> PipelineStep<T, T> for DummyStep {
         match input {
             ReceiveType::Single(t) => Ok(t),
             ReceiveType::Multi(_) => Err(String::from("Received multi message from pipeline step")),
+            ReceiveType::Dummy => Err(String::from("Dummy Value")),
         }
     }
 }
@@ -55,7 +57,7 @@ impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> {
     fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
         let received_result = self.input.receive();
         match received_result {
-            Err(err) => PipelineStepResult::RecvTimeoutError(err),
+            Err(err) => PipelineStepResult::RecvTimeoutError(err), // must have a way to handle if it is a dummy
             Ok(val) => {
                 let output_data: Result<O, String> = step.run(val);
                 self.compute_handler(output_data)
@@ -73,7 +75,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
             id: String::from(""),
         }
     }
-    
+
     fn compute_handler(&mut self, output_data: Result<O, String>) -> PipelineStepResult {
         match output_data {
             Err(err) => PipelineStepResult::ComputeError(err),

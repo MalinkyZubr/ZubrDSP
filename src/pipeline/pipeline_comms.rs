@@ -6,7 +6,8 @@ use super::pipeline_traits::Sharable;
 #[derive(Debug, Clone)]
 pub enum ReceiveType<T: Sharable> {
     Single(T),
-    Multi(Vec<T>)
+    Multi(Vec<T>),
+    Dummy
 }
 
 
@@ -15,7 +16,7 @@ pub struct WrappedReceiver<T: Sharable> {
 }
 
 impl<T: Sharable> WrappedReceiver<T> {
-    pub fn new(receiver: Receiver<T>) -> Self { 
+    pub fn new(receiver: Receiver<T>) -> Self {
         WrappedReceiver { receiver }
     }
     pub fn recv(&mut self, timeout: u64, retries: usize) -> Result<T, RecvTimeoutError> {
@@ -128,7 +129,7 @@ impl<I: Sharable> NodeReceiver<I> {
         match self {
             NodeReceiver::SI(receiver) => receiver.receive(),
             NodeReceiver::MI(receiver) => receiver.receive(),
-            NodeReceiver::Dummy => Err(RecvTimeoutError::Disconnected)
+            NodeReceiver::Dummy => Ok(ReceiveType::Dummy)
         }
     }
 }
