@@ -1,9 +1,7 @@
 use crate::byte_line::codings::convolutional::trellis::trellis::*;
 use crate::byte_line::codings::opts::*;
-use crate::pipeline::pipeline_step::PipelineStep;
-
+use crate::pipeline::api::*;
 use std::mem;
-use std::u8::MAX;
 
 
 enum ViterbiState {
@@ -166,7 +164,10 @@ impl ViterbiOpCore {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ViterbiOpCore {
-    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
-        self.viterbi(&input).1
+    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<Vec<u8>, String> {
+        match input {
+            ReceiveType::Single(value) => Ok(self.viterbi(&value).1),
+            _ => Err(String::from("multi receive type not allowed"))
+        }
     }
 }

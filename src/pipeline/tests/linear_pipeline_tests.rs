@@ -64,6 +64,11 @@ mod node_tests {
         dbg!(&result);
         assert_eq!(result, 3);
 
+        input_pair.0.send(2).unwrap();
+        let result = output_receiver.recv().unwrap();
+        dbg!(&result);
+        assert_eq!(result, 4);
+
         pipeline.kill();
     }
 }

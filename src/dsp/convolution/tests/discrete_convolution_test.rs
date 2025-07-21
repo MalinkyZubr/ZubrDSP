@@ -1,6 +1,6 @@
 mod convolution_test {
     use crate::dsp::convolution::discrete_convolution::DiscreteConvolution;
-    use crate::pipeline::pipeline_step::PipelineStep;
+    use crate::pipeline::api::*;
     use super::*;
     extern crate test;
 
@@ -11,9 +11,9 @@ mod convolution_test {
         let input_vector = vec![0.5, 2.0];
         let result_true = vec![0.5, 2.5];
 
-        let result_exp = convolver.run(input_vector);
+        let result_exp = convolver.run(ReceiveType::Single(input_vector));
 
-        assert_eq!(result_exp, result_true);
+        assert_eq!(result_exp.unwrap(), result_true);
     }
     
     #[bench]
@@ -22,7 +22,7 @@ mod convolution_test {
 
         b.iter(|| {
             let input_vector = vec![1.0; 2048];
-            convolver.run(input_vector);
+            convolver.run(ReceiveType::Single(input_vector));
         })
     }
 }

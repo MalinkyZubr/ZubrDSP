@@ -11,9 +11,10 @@ impl<T> TapStep<T> {
     }
 }
 impl<T: Sharable> PipelineStep<T, T> for TapStep<T> {
-    fn run<'a>(&mut self, input: ReceiveType<T>) -> Result<T, String> {
-        self.tap_sender.send(input.clone()).unwrap();
-
-        return Ok(input);
+    fn run(&mut self, input: ReceiveType<T>) -> Result<T, String> {
+        match input {
+            ReceiveType::Single(value) => { self.tap_sender.send(value.clone()).unwrap(); Ok(value) },
+            _ => Err(String::from("Unexpected receive type."))
+        }
     }
 }

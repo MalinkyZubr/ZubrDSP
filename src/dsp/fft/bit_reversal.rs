@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::general::parallel_computation::{self, *};
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use crate::pipeline::pipeline_step::PipelineStep;
+use crate::pipeline::api::*;
 
 
 //#[derive(Clone, Copy)]
@@ -213,12 +213,17 @@ impl FFTBitReversal {
 
 
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FFTBitReversal {    
-    fn run(&mut self, input: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
-        if self.is_ifft {
-            return self.ifft(input);
-        }
-        else {
-            return self.fft(input);
+    fn run(&mut self, input: ReceiveType<Vec<Complex<f32>>>) -> Result<Vec<Complex<f32>>, String> {
+        match input {
+            ReceiveType::Single(value) => {
+                if self.is_ifft {
+                    Ok(self.ifft(value))
+                }
+                else {
+                    Ok(self.fft(value))
+                }
+            }
+            _ => Err(String::from("Cannot take multiple inputs"))
         }
     }   
 }

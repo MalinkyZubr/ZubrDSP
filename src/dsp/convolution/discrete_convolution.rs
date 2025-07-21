@@ -1,6 +1,6 @@
 use std::mem;
 use std::slice;
-use crate::pipeline::pipeline_step::*;
+use crate::pipeline::api::*;
 
 
 pub struct DiscreteConvolution {
@@ -43,7 +43,10 @@ impl DiscreteConvolution {
 
 
 impl PipelineStep<Vec<f32>, Vec<f32>> for DiscreteConvolution {
-    fn run(&mut self, input: Vec<f32>) -> Vec<f32> {
-        self.convolve_input(input)
+    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<Vec<f32>, String> {
+        match input {
+            ReceiveType::Single(value) => Ok(self.convolve_input(value)),
+            _ => Err(String::from("Cannot run against multiple inputs"))
+        }
     }
 }

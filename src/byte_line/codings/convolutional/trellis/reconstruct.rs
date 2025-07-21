@@ -1,4 +1,4 @@
-use crate::pipeline::pipeline_step::PipelineStep;
+use crate::pipeline::api::*;
 use num::traits::{Pow};
 
 
@@ -25,10 +25,14 @@ impl ConvolutionalReassembler {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalReassembler {
-    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
-        let mut output: Vec<u8> = vec![0; input.len()];
-        self.compute_input_vector(&input, &mut output);
-
-        return output;
+    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<Vec<u8>, String> {
+        match input {
+            ReceiveType::Single(value) => {
+                let mut output: Vec<u8> = vec![0; value.len()];
+                self.compute_input_vector(&value, &mut output);
+                Ok(output)
+            },
+            _ => Err(String::from("Cannot process multiple inputs"))
+        }
     }
 }

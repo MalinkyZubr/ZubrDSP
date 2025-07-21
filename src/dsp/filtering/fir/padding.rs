@@ -1,5 +1,5 @@
 use num::Complex;
-use crate::pipeline::pipeline_step::PipelineStep;
+use crate::pipeline::api::*;
 
 
 pub struct LinearConvolutionPadder {
@@ -7,8 +7,13 @@ pub struct LinearConvolutionPadder {
     filter_size: usize
 }
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for LinearConvolutionPadder {
-    fn run<'a>(&mut self, mut input: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
-        input.append(&mut vec![Complex::new(0.0, 0.0); self.filter_size - 1]);
-        return input;
+    fn run<'a>(&mut self, mut input: ReceiveType<Vec<Complex<f32>>>) -> Result<Vec<Complex<f32>>, String> {
+        match input {
+            ReceiveType::Single(mut value) => {
+                value.append(&mut vec![Complex::new(0.0, 0.0); self.filter_size - 1]);
+                Ok(value)
+            },
+            _ => Err(String::from("Cannot take multiple inputs"))
+        }
     }
 }

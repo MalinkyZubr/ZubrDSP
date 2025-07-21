@@ -3,9 +3,7 @@ use crate::dsp::fft::bit_reversal::*;
 use crate::dsp::fft::fftshift::fft_shift;
 use crate::dsp::filtering::fir::ideal_response::impulse_response::FIRTransferFunction;
 use crate::dsp::filtering::fir::windows::window::{apply_window, WindowFunction};
-use super::ideal_response::*;
-use super::windows::*;
-use crate::pipeline::pipeline_step::PipelineStep;
+use crate::pipeline::api::*;
 
 
 pub struct FirFilter {
@@ -41,14 +39,19 @@ impl FirFilter { // the buffersize for the FIR (num coefficients) need not be eq
 
 
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FirFilter {
-    fn run<'a>(&mut self, mut input: Vec<Complex<f32>>) -> Vec<Complex<f32>> { // assume input is pre-padded
-        input.append(&mut vec![Complex::new(0.0, 0.0); self.transfer_function.len() - 1]); // need padding for linear convolution
-        let mut filtered: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); input.len() + self.transfer_function.len() - 1];
-        
-        for (index, value) in input.iter().enumerate() {
-            filtered[index] = value * self.transfer_function[index];
+    fn run<'a>(&mut self, mut input: ReceiveType<Vec<Complex<f32>>>) -> Result<Vec<Complex<f32>>, String> { // assume input is pre-padded
+        match input {
+            ReceiveType::Single(mut value) => {
+                value.append(&mut vec![Complex::new(0.0, 0.0); self.transfer_function.len() - 1]); // need padding for linear convolution
+                let mut filtered: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); value.len() + self.transfer_function.len() - 1];
+
+                for (index, value_internal) in value.iter().enumerate() {
+                    filtered[index] = value_internal * self.transfer_function[index];
+                }
+                
+                Ok(filtered)
+            }
+            _ => Err(String::from("Cannot take multiple inputs"))
         }
-        
-        return filtered;
     }
 }

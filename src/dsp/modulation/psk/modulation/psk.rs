@@ -55,9 +55,10 @@ impl PSKModulator {
 }
 
 impl PipelineStep<Vec<f32>, Vec<f32>> for PSKModulator {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Vec<f32> {
-        let result = self.psk_modulate(&input);
-
-        return result;
+    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<Vec<f32>, String> {
+        match input {
+            ReceiveType::Single(value) => Ok(self.psk_modulate(&value)),
+            _ => Err(String::from("Cannot take multiple inputs"))
+        }
     }
 }

@@ -1,4 +1,4 @@
-use crate::pipeline::pipeline_step::PipelineStep;
+use crate::pipeline::api::*;
 use super::encoder_io::{ConvolutionalOutputByteFactory, ConvolutionalInputConsumer, ConvolutionalInputProcessor};
 use super::trellis::{ConvolutionalEncoderLookup, ConvolutionalLookupGenerator};
 use super::params::ConvolutionalParams;
@@ -27,9 +27,12 @@ pub struct ConvolutionalEncoder {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalEncoder {
-    fn run(&mut self, input: Vec<u8>) -> Vec<u8> {
+    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<Vec<u8>, String> {
         // Remove Option handling and use input directly
-        self.consumer.consume(&input)
+        match input {
+            ReceiveType::Single(value) => Ok(self.consumer.consume(&value)),
+            _ => Err(String::from("Cannot process multiple inputs"))
+        }
     }
 }
 
