@@ -114,9 +114,10 @@ pub mod bit_reversal_fft_optimized {
     
     #[bench]
     fn optimized_fft_bench(b: &mut test::Bencher) {
+        let thing = convert_to_complex((0..1024).map(|x| x as f32).collect());
         b.iter(|| {
             test_fft_bit_reversal_comparative(
-                convert_to_complex((0..512).map(|x| x as f32).collect())
+                thing.clone()
             ) 
         });
     }

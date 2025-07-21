@@ -18,10 +18,10 @@ mod convolution_test {
     
     #[bench]
     fn bench_convolution(b: &mut test::Bencher) {
-        let mut convolver = DiscreteConvolution::new(2048, vec![1.0; 64]);
+        let mut convolver = DiscreteConvolution::new(1024, vec![1.0; 64]);
 
         b.iter(|| {
-            let input_vector = vec![1.0; 2048];
+            let input_vector = vec![1.0; 1024];
             convolver.run(ReceiveType::Single(input_vector));
         })
     }
