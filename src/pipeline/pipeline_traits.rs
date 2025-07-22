@@ -3,7 +3,11 @@ use std::sync::mpmc::{RecvError, RecvTimeoutError, SendError};
 use std::sync::mpsc::{Receiver, SyncSender};
 
 
-pub trait Sharable = Send + Sync + Debug + Clone + 'static;
+pub trait HasDefault {
+    fn default() -> Self;
+}
+
+pub trait Sharable = Send + Sync + Debug + Clone + HasDefault + 'static;
 
 pub trait Source {}
 pub trait Sink {}

@@ -55,15 +55,15 @@ impl PipelineThread {
 
             self.pipeline_step_thread = Some(
                 thread::spawn(move || {
-                    while !kill_flag_clone.load(Ordering::Acquire) {
+                    let mut error_count = 0;
+                    while !kill_flag_clone.load(Ordering::Acquire) && error_count < 10 {
                         let _ = receiver.recv_timeout(std::time::Duration::from_millis(1000));
-                        //dbg!("BULLSHIT!");
 
-                        while runflag_clone.load(Ordering::Acquire) {
-                            //dbg!("I SHIT WHERE I EAT");
+                        while runflag_clone.load(Ordering::Acquire) && error_count < 10 { // more thoughtful error handling later
                             let start_time = Instant::now();
                             let return_code_received = node.call(&mut step);
 
+                            Self::increment_disconnect_counter(&return_code_received, &mut error_count);
                             *return_code_clone.write().unwrap() = return_code_received;
 
                             let execution_time = start_time.elapsed().as_millis() as u64;
@@ -72,6 +72,13 @@ impl PipelineThread {
                     }
                 })
             );
+    }
+    
+    fn increment_disconnect_counter(result: &PipelineStepResult, disconnect_count: &mut u64) {
+        match result {
+            PipelineStepResult::Success => *disconnect_count = 0,
+            _ => *disconnect_count += 1
+        }
     }
 
     pub fn start(&mut self) {
