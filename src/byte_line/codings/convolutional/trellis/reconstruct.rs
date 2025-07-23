@@ -25,12 +25,12 @@ impl ConvolutionalReassembler {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalReassembler {
-    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<Vec<u8>, String> {
+    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<SendType<Vec<u8>>, String> {
         match input {
             ReceiveType::Single(value) => {
                 let mut output: Vec<u8> = vec![0; value.len()];
                 self.compute_input_vector(&value, &mut output);
-                Ok(output)
+                Ok(SendType::NonInterleaved(output))
             },
             _ => Err(String::from("Cannot process multiple inputs"))
         }

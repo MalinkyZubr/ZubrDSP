@@ -135,6 +135,20 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
 
         return successor;
     }
+
+    pub fn start_pipeline_interleaved(start_id: String, pipeline: &mut RadioPipeline) -> PipelineNode<I, O>
+    where I: Unit {
+        // start a pipeline in interleaved mode, assuming the source itself will need to send multiple outputs
+        let (sender, receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
+
+        let start_node: PipelineNode<I, O> = PipelineNode {
+            input: NodeReceiver::Dummy,
+            output: NodeSender::MO(MultiSender::new()),
+            id: start_id,
+        };
+
+        start_node
+    }
     
     pub fn split_begin(mut self, id: String) -> PipelineNode<I, O> {
         // take the node outputted by a previous step in the builder and declare it as multiple out

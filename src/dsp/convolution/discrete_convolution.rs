@@ -43,9 +43,9 @@ impl DiscreteConvolution {
 
 
 impl PipelineStep<Vec<f32>, Vec<f32>> for DiscreteConvolution {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<Vec<f32>, String> {
+    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<f32>>, String> {
         match input {
-            ReceiveType::Single(value) => Ok(self.convolve_input(value)),
+            ReceiveType::Single(value) => Ok(SendType::NonInterleaved(self.convolve_input(value))),
             _ => Err(String::from("Cannot run against multiple inputs"))
         }
     }

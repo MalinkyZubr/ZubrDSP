@@ -39,7 +39,7 @@ impl FirFilter { // the buffersize for the FIR (num coefficients) need not be eq
 
 
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FirFilter {
-    fn run<'a>(&mut self, mut input: ReceiveType<Vec<Complex<f32>>>) -> Result<Vec<Complex<f32>>, String> { // assume input is pre-padded
+    fn run<'a>(&mut self, mut input: ReceiveType<Vec<Complex<f32>>>) -> Result<SendType<Vec<Complex<f32>>>, String> { // assume input is pre-padded
         match input {
             ReceiveType::Single(mut value) => {
                 value.append(&mut vec![Complex::new(0.0, 0.0); self.transfer_function.len() - 1]); // need padding for linear convolution
@@ -49,7 +49,7 @@ impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FirFilter {
                     filtered[index] = value_internal * self.transfer_function[index];
                 }
                 
-                Ok(filtered)
+                Ok(SendType::NonInterleaved(filtered))
             }
             _ => Err(String::from("Cannot take multiple inputs"))
         }

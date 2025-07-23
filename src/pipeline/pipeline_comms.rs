@@ -16,6 +16,14 @@ pub enum SendType<T: Sharable> {
     Interleaved(Vec<T>),
     NonInterleaved(T)
 }
+impl<T: Sharable> SendType<T> {
+    pub fn unwrap_noninterleaved(self) -> T {
+        match self {
+            SendType::NonInterleaved(x) => x,
+            _ => panic!()
+        }
+    }
+}
 
 
 #[derive(Debug)]
@@ -65,20 +73,7 @@ impl<T: Sharable> SingleSender<T> {
     }
     pub fn send(&mut self, value: SendType<T>) -> Result<(), SendError<T>> {
         match value {
-            SendType::Interleaved(data_vec) => {
-                let mut result = Ok(());
-                
-                for value in  data_vec {
-                    result = self.sender.send(value);
-                    
-                    match &result {
-                        Err(err) => break,
-                        Ok(_) => {}
-                    }
-                };
-                
-                result
-            },
+            SendType::Interleaved(mut data_vec) => Err(SendError(data_vec.pop().unwrap())),
             SendType::NonInterleaved(value) => self.sender.send(value)
         }
     }

@@ -175,14 +175,14 @@ impl FFTBitReversalOptimized {
 
 
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FFTBitReversalOptimized {
-    fn run(&mut self, input: ReceiveType<Vec<Complex<f32>>>) -> Result<Vec<Complex<f32>>, String> {
+    fn run(&mut self, input: ReceiveType<Vec<Complex<f32>>>) -> Result<SendType<Vec<Complex<f32>>>, String> {
         match input {
             ReceiveType::Single(value) => {
                 if self.is_ifft {
-                    Ok(self.ifft(value))
+                    Ok(SendType::NonInterleaved(self.ifft(value)))
                 }
                 else {
-                    Ok(self.fft(value))
+                    Ok(SendType::NonInterleaved(self.fft(value)))
                 }
             }
             _ => Err(String::from("Cannot take multiple inputs"))

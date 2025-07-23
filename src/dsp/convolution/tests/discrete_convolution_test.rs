@@ -13,7 +13,7 @@ mod convolution_test {
 
         let result_exp = convolver.run(ReceiveType::Single(input_vector));
 
-        assert_eq!(result_exp.unwrap(), result_true);
+        assert_eq!(result_exp.unwrap().unwrap_noninterleaved(), result_true);
     }
     
     #[bench]

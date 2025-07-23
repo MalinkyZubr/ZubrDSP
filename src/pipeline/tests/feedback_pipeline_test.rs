@@ -14,7 +14,7 @@ mod node_tests {
     }
     impl PipelineStep<(), u32> for Dummy1 {
         fn run(&mut self, input: ReceiveType<()>) -> Result<SendType<u32>, String> {
-            let real_input = self.receiver.recv_timeout(std::time::Duration::from_millis(2000)).unwrap_or(0);
+            let real_input = self.receiver.recv_timeout(std::time::Duration::from_millis(10000)).unwrap();
             Ok(SendType::NonInterleaved(real_input + 1))
         }
     }
