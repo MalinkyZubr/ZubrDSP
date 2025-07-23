@@ -4,7 +4,7 @@ use std::sync::mpsc::{RecvTimeoutError};
 use crate::pipeline::pipeline::RadioPipeline;
 use super::pipeline_thread::PipelineThread;
 use super::pipeline_traits::{Sharable, Unit, HasID, Source, Sink};
-use super::pipeline_comms::{WrappedReceiver, NodeReceiver, NodeSender, MultiReceiver, MultiSender, ReceiveType, SingleReceiver};
+use super::pipeline_comms::{WrappedReceiver, NodeReceiver, NodeSender, MultiReceiver, MultiSender, ReceiveType, SingleReceiver, SendType, SingleSender};
 
 
 #[derive(Debug)]
@@ -16,16 +16,16 @@ pub enum PipelineStepResult {
 }
 
 pub trait PipelineStep<I: Sharable, O: Sharable> : Send + 'static {
-    fn run(&mut self, input: ReceiveType<I>) -> Result<O, String>;
+    fn run(&mut self, input: ReceiveType<I>) -> Result<SendType<O>, String>;
 }
 
 
 #[derive(Debug, Copy, Clone)]
 struct DummyStep {}
 impl<T: Sharable> PipelineStep<T, T> for DummyStep {
-    fn run(&mut self, input: ReceiveType<T>) -> Result<T, String> {
+    fn run(&mut self, input: ReceiveType<T>) -> Result<SendType<T>, String> {
         match input {
-            ReceiveType::Single(t) => Ok(t),
+            ReceiveType::Single(t) => Ok(SendType::NonInterleaved(t)),
             ReceiveType::Multi(_) => Err(String::from("Received multi message from pipeline step")),
             ReceiveType::Dummy => Err(String::from("Dummy Value")),
         }
@@ -61,7 +61,7 @@ impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> {
         match received_result {
             Err(err) => PipelineStepResult::RecvTimeoutError(err), // must have a way to handle if it is a dummy
             Ok(val) => {
-                let output_data: Result<O, String> = step.run(val);
+                let output_data: Result<SendType<O>, String> = step.run(val);
                 self.compute_handler(output_data)
             }
         }
@@ -78,7 +78,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
         }
     }
 
-    fn compute_handler(&mut self, output_data: Result<O, String>) -> PipelineStepResult {
+    fn compute_handler(&mut self, output_data: Result<SendType<O>, String>) -> PipelineStepResult {
         match output_data {
             Err(err) => PipelineStepResult::ComputeError(err),
             Ok(extracted_data) => match self.output.send(extracted_data) {
@@ -96,7 +96,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
 
         self.set_id(id);
 
-        self.output = NodeSender::SO(sender);
+        self.output = NodeSender::SO(SingleSender::new(sender));
         successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), pipeline.timeout, pipeline.retries));
 
         let new_thread = PipelineThread::new(step, self);
@@ -123,7 +123,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
 
         let start_node: PipelineNode<I, O> = PipelineNode { 
             input: NodeReceiver::Dummy, 
-            output: NodeSender::SO(sender), 
+            output: NodeSender::SO(SingleSender::new(sender)), 
             id: start_id,
         };
 
@@ -157,7 +157,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
                 let (successor_sender, successor_receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
                 
                 let dummy_receiver = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(split_receiver), pipeline.timeout,  pipeline.retries));
-                let dummy_attacher_node: PipelineNode<O, O> = PipelineNode { input: dummy_receiver, output: NodeSender::SO(successor_sender), id: branch_name };
+                let dummy_attacher_node: PipelineNode<O, O> = PipelineNode { input: dummy_receiver, output: NodeSender::SO(SingleSender::new(successor_sender)), id: branch_name };
                 
                 let mut successor: PipelineNode<O, F> = PipelineNode::new();
                 
@@ -211,7 +211,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
                 let (sender, receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
                 let mut successor: PipelineNode<O, F> = PipelineNode::new();
 
-                self.output = NodeSender::SO(sender);
+                self.output = NodeSender::SO(SingleSender::new(sender));
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), pipeline.timeout, pipeline.retries));
 
                 let new_thread = PipelineThread::new(step, self);
@@ -232,7 +232,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
         };
         
         let mut lazy_node = PipelineNode::new();
-        lazy_node.output = NodeSender::SO(sender);
+        lazy_node.output = NodeSender::SO(SingleSender::new(sender));
         
         lazy_node
     }

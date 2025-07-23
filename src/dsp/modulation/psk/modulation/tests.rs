@@ -33,9 +33,14 @@ pub mod psk_tests {
     #[test]
     fn psk_test() {
         let mut phase_vector_generator: PhaseVectorGenerator = PhaseVectorGenerator::new(PSKPoint::BPSK, PI);
-        let result: Result<Vec<f32>, String> = phase_vector_generator.run(ReceiveType::Single(vec![210]));
+        let result: Result<SendType<Vec<f32>>, String> = phase_vector_generator.run(ReceiveType::Single(vec![210]));
 
         let result = result.unwrap();
+        let result = match result {
+            SendType::NonInterleaved(data) => data,
+            _ => panic!("Expected SendType::Interleaved")
+        };
+        
         let length = (&result).len();
 
         let mut modulator = PSKModulator::new(16.0, BasisType::COSINE);

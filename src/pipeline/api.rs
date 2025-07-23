@@ -1,4 +1,4 @@
-pub use super::pipeline_comms::ReceiveType;
+pub use super::pipeline_comms::{ReceiveType, SendType};
 pub use super::pipeline_step::{PipelineStep, PipelineStepResult, PipelineNode};
 pub use super::pipeline_traits::*;
 pub use super::valid_types::{ValidBytes, ValidComplex, ValidDSPNumerical, ValidFloat};

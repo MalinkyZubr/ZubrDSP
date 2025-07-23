@@ -4,27 +4,27 @@ mod node_tests {
     use crate::pipeline::pipeline::RadioPipeline;
     use crate::pipeline::pipeline_step::{PipelineNode, PipelineStep};
     use crate::pipeline::pipeline_traits::{Source, Sink};
-    use crate::pipeline::pipeline_comms::ReceiveType;
+    use crate::pipeline::pipeline_comms::{ReceiveType, SendType};
 
 
     struct Dummy1 {
         receiver: mpsc::Receiver<u32>
     }
     impl PipelineStep<(), u32> for Dummy1 {
-        fn run(&mut self, input: ReceiveType<()>) -> Result<u32, String> {
+        fn run(&mut self, input: ReceiveType<()>) -> Result<SendType<u32>, String> {
             let real_input = self.receiver.recv_timeout(std::time::Duration::from_millis(2000)).unwrap_or(0);
-            Ok(real_input + 1)
+            Ok(SendType::NonInterleaved(real_input + 1))
         }
     }
     impl Source for Dummy1 {}
 
     struct Dummy2{}
     impl PipelineStep<u32, u32> for Dummy2 {
-        fn run(&mut self, input: ReceiveType<u32>) -> Result<u32, String> {
+        fn run(&mut self, input: ReceiveType<u32>) -> Result<SendType<u32>, String> {
             match input {
-                ReceiveType::Single(t) => Ok(t + 1),
+                ReceiveType::Single(t) => Ok(SendType::NonInterleaved(t + 1)),
                 ReceiveType::Multi(t) => {
-                    Ok(t.iter().sum())
+                    Ok(SendType::NonInterleaved(t.iter().sum()))
                 }
                 _ => Err("Dummy".to_string())
             }
@@ -35,11 +35,11 @@ mod node_tests {
         sender: mpsc::Sender<u32>,
     }
     impl PipelineStep<u32, ()> for Dummy3 {
-        fn run(&mut self, input: ReceiveType<u32>) -> Result<(), String> {
+        fn run(&mut self, input: ReceiveType<u32>) -> Result<SendType<()>, String> {
             match input {
                 ReceiveType::Single(val) => {
                     self.sender.send(val).unwrap();
-                    Ok(())
+                    Ok(SendType::NonInterleaved(()))
                 }
                 _ => Err(String::from("Received multi message from pipeline step"))
             }

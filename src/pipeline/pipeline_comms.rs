@@ -55,6 +55,34 @@ impl<T: Sharable + HasDefault> WrappedReceiver<T> {
     }
 }
 
+#[derive(Debug)]
+pub struct SingleSender<T: Sharable> {
+    sender: SyncSender<T>,
+}
+impl<T: Sharable> SingleSender<T> {
+    pub fn new(sender: SyncSender<T>) -> Self {
+        SingleSender { sender }
+    }
+    pub fn send(&mut self, value: SendType<T>) -> Result<(), SendError<T>> {
+        match value {
+            SendType::Interleaved(data_vec) => {
+                let mut result = Ok(());
+                
+                for value in  data_vec {
+                    result = self.sender.send(value);
+                    
+                    match &result {
+                        Err(err) => break,
+                        Ok(_) => {}
+                    }
+                };
+                
+                result
+            },
+            SendType::NonInterleaved(value) => self.sender.send(value)
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct SingleReceiver<T: Sharable> {
@@ -86,11 +114,23 @@ impl<T: Sharable> MultiSender<T> {
             senders: Vec::new(),
         }
     }
-    pub fn send_all(&mut self, mut data: T) -> Result<(), SendError<T>> { // all branches must be ready to receive
+    pub fn send_all(&mut self, mut data: SendType<T>) -> Result<(), SendError<T>> { // all branches must be ready to receive
         let mut result = Ok(());
         
-        for index in 0..self.senders.len() {
-            result = self.senders[index].send(data.clone()); // evaluate this decision later
+        match data {
+            SendType::NonInterleaved(value) => {
+                for index in 0..self.senders.len() {
+                    result = self.senders[index].send(value.clone());
+                    match &result { Err(err) => { break }, _ => () }
+                }
+            }
+            SendType::Interleaved(mut value) => { // you receive an explicit condiiton from the step that the data is interleaved and each piece of data should be sent uniquely somewhere different
+                value.reverse();
+                for index in 0..self.senders.len() {
+                    result = self.senders[index].send(value.pop().unwrap());
+                    match &result { Err(err) => { break }, _ => () }
+                }
+            }
         }
         
         result
@@ -154,16 +194,16 @@ impl<I: Sharable> NodeReceiver<I> {
 }
 
 pub enum NodeSender<O: Sharable> {
-    SO(SyncSender<O>),
+    SO(SingleSender<O>),
     MO(MultiSender<O>),
     Dummy
 }
 impl <O: Sharable> NodeSender<O> {
-    pub fn send(&mut self, data: O) -> Result<(), SendError<O>> {
+    pub fn send(&mut self, data: SendType<O>) -> Result<(), SendError<O>> {
         match self {
             NodeSender::SO(sender) => sender.send(data),
             NodeSender::MO(sender) => sender.send_all(data),
-            NodeSender::Dummy => {Err(SendError(data))}
+            NodeSender::Dummy => {Err(SendError(match data { SendType::NonInterleaved(val) => val, SendType::Interleaved(_) => panic!("How this even happens?")}))}
         }
     }
 }
