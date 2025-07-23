@@ -4,8 +4,6 @@ use std::sync::{Mutex, Arc, RwLock, MutexGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::Instant;
-use crossterm::ExecutableCommand;
-use tokio::sync::mpsc as AsyncMPSC;
 use super::pipeline_step::{PipelineStep, PipelineNode, CallableNode, PipelineStepResult};
 use super::pipeline_traits::{HasID, Sharable};
 

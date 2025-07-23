@@ -11,6 +11,13 @@ pub enum ReceiveType<T: Sharable> {
 }
 
 
+#[derive(Debug, Clone)]
+pub enum SendType<T: Sharable> {
+    Interleaved(Vec<T>),
+    NonInterleaved(T)
+}
+
+
 #[derive(Debug)]
 pub struct WrappedReceiver<T: Sharable> {
     receiver: Receiver<T>,
