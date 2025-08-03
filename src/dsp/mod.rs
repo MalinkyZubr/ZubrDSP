@@ -1,6 +1,8 @@
 pub mod modulation;
 pub mod filtering;
 pub mod fft;
-mod sampling;
-mod classification;
-mod convolution;
+pub mod sampling;
+pub mod classification;
+pub mod system_response;
+pub mod pll;
+pub mod core;

@@ -7,7 +7,6 @@ mod pipeline;
 mod byte_line;
 mod dsp;
 mod general;
-
 use color_eyre::Result;
 use ratatui::{
     style::Stylize

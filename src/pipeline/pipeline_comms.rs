@@ -74,7 +74,7 @@ impl<T: Sharable> SingleSender<T> {
     pub fn send(&mut self, value: SendType<T>) -> Result<(), SendError<T>> {
         match value {
             SendType::Interleaved(mut data_vec) => Err(SendError(data_vec.pop().unwrap())),
-            SendType::NonInterleaved(value) => self.sender.send(value)
+            SendType::NonInterleaved(value) => self.sender.send(value),
         }
     }
 }
