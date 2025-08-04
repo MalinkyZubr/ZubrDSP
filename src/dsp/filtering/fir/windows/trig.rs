@@ -23,8 +23,8 @@ impl RaisedCosineWindow {
     }
 }
 impl WindowFunction for RaisedCosineWindow {
-    fn window_function(&self, sample: f32, window_size: f32) -> f32 {
-        let cosine_term = ((2.0 * PI * sample) / window_size).cos();
+    fn window_function(&self, sample: u32, window_size: usize) -> f32 {
+        let cosine_term = ((2.0 * PI * sample as f32) / window_size as f32).cos();
         return self.cosine_coefficient - ((1.0 - self.cosine_coefficient) * cosine_term);
     }
 }
@@ -64,12 +64,12 @@ impl CosineSumWindow {
     }
 }
 impl WindowFunction for CosineSumWindow {
-    fn window_function(&self, sample: f32, window_size: f32) -> f32 {
+    fn window_function(&self, sample: u32, window_size: usize) -> f32 {
         let mut sample_result = self.coefficients[0];
         let mut subtract = true;
 
         for (index, coefficient) in self.coefficients.iter().enumerate().skip(0) {
-            let term = coefficient * ((2.0 * index as f32 * PI * sample) / window_size).cos();
+            let term = coefficient * ((2.0 * index as f32 * PI * sample as f32) / window_size as f32).cos();
             if subtract {
                 sample_result -= term;
                 subtract = false;
@@ -87,8 +87,8 @@ impl WindowFunction for CosineSumWindow {
 
 pub struct SineWindow {}
 impl WindowFunction for SineWindow {
-    fn window_function(&self, sample: f32, window_size: f32) -> f32 {
-        return (PI * sample / window_size).sin();
+    fn window_function(&self, sample: u32, window_size: usize) -> f32 {
+        return (PI * sample as f32 / window_size as f32).sin();
     }
 }
 

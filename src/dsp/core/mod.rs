@@ -1,1 +1,1 @@
-mod pointwise_arithmetic;
+pub mod pointwise_arithmetic;

@@ -12,10 +12,10 @@ impl BartlettHann {
     }
 }
 impl WindowFunction for BartlettHann {
-    fn window_function(&self, sample: f32, window_size: f32) -> f32 {
+    fn window_function(&self, sample: u32, window_size: usize) -> f32 {
         return self.coefficients[0] - 
-            (self.coefficients[1] * ((sample / window_size) - 0.5).abs()) - 
-            (self.coefficients[2] * (2.0 * PI * sample / window_size).cos())
+            (self.coefficients[1] * ((sample as f32 / window_size as f32) - 0.5).abs()) - 
+            (self.coefficients[2] * (2.0 * PI * sample as f32 / window_size as f32).cos())
     }
 }
 

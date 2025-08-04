@@ -97,3 +97,27 @@ impl PipelineStep<Vec<Vec<f32>>, Vec<f32>> for OverlapAddCombiner { // need some
         }
     }
 }
+
+pub struct FrequencyConvolution {
+    transfer_function: TransferFunction,
+}
+impl FrequencyConvolution {
+    pub fn new(transfer_function: TransferFunction) -> Self {
+        Self { transfer_function }
+    }
+    fn convolve(&self, mut data: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
+        for (sample, transfer_sample) in data.iter_mut().zip(self.transfer_function.transfer_function.iter()) {
+            *sample = *sample * *transfer_sample;
+        }
+
+        data
+    }
+}
+impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for  FrequencyConvolution {
+    fn run(&mut self, input: ReceiveType<Vec<Complex<f32>>>) -> Result<SendType<Vec<Complex<f32>>>, String> {
+        match input {
+            ReceiveType::Single(data) => Ok(SendType::NonInterleaved(self.convolve(data))),
+            _ => Err("chunker can only take single input vector".to_string())
+        }
+    }
+}

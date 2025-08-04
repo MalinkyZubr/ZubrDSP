@@ -1,7 +1,7 @@
 pub mod FIRImpulseResponseTests {
     use num::Complex;
     use crate::dsp::fft::fftshift::*;
-    use crate::dsp::filtering::fir::ideal_response::impulse_response::FIRTransferFunction;
+    use crate::dsp::filtering::fir::ideal_response::fir_utils::FIRTransferFunction;
     use crate::dsp::filtering::fir::ideal_response::rectangles::{SelectPassRectangular, SelectPassType, SidePassRectangular, SidePassType};
 
     fn convert_to_complex(input: Vec<f32>) -> Vec<Complex<f32>> {

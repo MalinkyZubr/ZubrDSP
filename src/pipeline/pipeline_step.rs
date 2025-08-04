@@ -4,7 +4,7 @@ use std::sync::mpsc::{RecvTimeoutError};
 use crate::pipeline::pipeline::RadioPipeline;
 use super::pipeline_thread::PipelineThread;
 use super::pipeline_traits::{Sharable, Unit, HasID, Source, Sink};
-use super::pipeline_comms::{WrappedReceiver, NodeReceiver, NodeSender, MultiReceiver, MultiSender, ReceiveType, SingleReceiver, SendType, SingleSender};
+use super::pipeline_comms::{WrappedReceiver, NodeReceiver, NodeSender, MultiReceiver, MultiSender, ReceiveType, SingleReceiver, ODFormat, SingleSender};
 
 
 #[derive(Debug)]
@@ -15,8 +15,17 @@ pub enum PipelineStepResult {
     ComputeError(String)
 }
 
+// how can I make multiple input and output types more convenient?
+/*
+1. every pipeline step has a separate trait method for each input type, with separate signature. By defualt it will return an error saying its unimplemented
+2. user can return whatever data scheme they want from each separate handler for the node to do with what it pleases
+3. at the beginning of runtime, depending on the receiver type assigned to the node, a different handler (node method) is chosen to receive, so no additional match is needed
+ */
 pub trait PipelineStep<I: Sharable, O: Sharable> : Send + 'static {
-    fn run(&mut self, input: ReceiveType<I>) -> Result<SendType<O>, String>;
+    fn run(&mut self, input: ReceiveType<I>, multi_out: bool) -> Result<SendType<O>, String>;
+    fn run_single_input(&mut self, input: I, multi_out: bool) -> Result<ODFormat<O>, String>;
+    fn run_series_input(&mut self, input: Vec<I>, multi_out: bool) -> Result<ODFormat<O>, String>;
+    fn run_multi_input(&mut self, input: I, multi_out: bool) -> Result<ODFormat<O>, String>;
 }
 
 
@@ -294,4 +303,9 @@ pub fn joint_feedback_begin<I: Sharable, O: Sharable>(id: String, pipeline: &mut
     joint_node.input = NodeReceiver::MI(MultiReceiver::new(pipeline.timeout, pipeline.retries));
 
     joint_node
+}
+
+
+pub trait PipelineRecipe<I: Sharable, O: Sharable> { // allow to save and standardize macro-scale components that you dont wan tto repeatedly redefine
+    fn construct<FI: Sharable, FO: Sharable>(origin_node: PipelineNode<FI, I>, pipeline: &mut RadioPipeline) -> PipelineNode<O, FO>;
 }

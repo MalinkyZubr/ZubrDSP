@@ -1,5 +1,6 @@
 use num::Complex;
-use super::impulse_response::*;
+use super::fir_utils::*;
+use crate::dsp::system_response::system_functions::TransferFunction;
 use crate::general::validation_functions::{BoundType, is_within_bounds};
 
 
@@ -19,21 +20,21 @@ impl SidePassRectangular {
         SidePassRectangular {cutoff_frequency, pass_type}
     }
 }
-impl FIRTransferFunction for SidePassRectangular {
-    fn transfer_function(&self, frequency_buffer: Vec<f32>) -> Vec<Complex<f32>> {
-        let mut impulse_response = vec![Complex::new(0.0, 0.0); frequency_buffer.len()];
+impl FIRFilter for SidePassRectangular {
+    fn transfer_function(&self, frequency_buffer: Vec<f32>) -> TransferFunction {
+        let mut transfer_window = vec![Complex::new(0.0, 0.0); frequency_buffer.len()];
 
         for (index, frequency) in frequency_buffer.iter().enumerate() {
             match self.pass_type {
                 SidePassType::LowPass => {if frequency.abs() <= self.cutoff_frequency {
-                    impulse_response[index] = Complex::new(1.0, 0.0);
+                    transfer_window[index] = Complex::new(1.0, 0.0);
                 }}
                 SidePassType::HighPass => {if frequency.abs() >= self.cutoff_frequency {
-                    impulse_response[index] = Complex::new(1.0, 0.0)
+                    transfer_window[index] = Complex::new(1.0, 0.0)
                 }}
             }
         }
-        return impulse_response;
+        TransferFunction::new_configured(transfer_window)
     }
 }
 
@@ -58,9 +59,9 @@ impl SelectPassRectangular {
         SelectPassRectangular {center_frequency, bandwidth, pass_type}
     }
 }
-impl FIRTransferFunction for SelectPassRectangular {
-    fn transfer_function(&self, frequency_buffer: Vec<f32>) -> Vec<Complex<f32>> {
-        let mut impulse_response = vec![Complex::new(0.0, 0.0); frequency_buffer.len()];
+impl FIRFilter for SelectPassRectangular {
+    fn transfer_function(&self, frequency_buffer: Vec<f32>) -> TransferFunction {
+        let mut transfer_window = vec![Complex::new(0.0, 0.0); frequency_buffer.len()];
 
         for (index, frequency) in frequency_buffer.iter().enumerate() {
             match self.pass_type {
@@ -73,7 +74,7 @@ impl FIRTransferFunction for SelectPassRectangular {
                         ),
                         (BoundType::Inclusive, BoundType::Inclusive)
                     ) {
-                    impulse_response[index] = Complex::new(1.0, 0.0);
+                    transfer_window[index] = Complex::new(1.0, 0.0);
                 }}
                 SelectPassType::BandStop => {
                     if !is_within_bounds(
@@ -83,10 +84,10 @@ impl FIRTransferFunction for SelectPassRectangular {
                             self.center_frequency + (self.bandwidth / 2.0)
                         ),
                         (BoundType::Inclusive, BoundType::Inclusive)
-                    ) { impulse_response[index] = Complex::new(1.0, 0.0);
+                    ) { transfer_window[index] = Complex::new(1.0, 0.0);
                 }}
             }
         }
-        return impulse_response;
+        TransferFunction::new_configured(transfer_window)
     }
 }

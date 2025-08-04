@@ -5,21 +5,55 @@ use super::pipeline_traits::{Sharable, HasDefault};
 
 #[derive(Debug, Clone)]
 pub enum ReceiveType<T: Sharable> {
+    /* 
+    This is a very important enum!
+    Single: Only a single value was received
+    Reassembled: Multiple values were received and they were reassembled from a series sender somewhere previously
+    Multi: This data is the aggregation of data received from multiple channels simultaneously
+    Dummy: this channel is not configured
+    
+    The pipeline step must handle how the internal behavior responds to each of these types!
+     */
     Single(T),
+    Reassembled(Vec<T>),
     Multi(Vec<T>),
     Dummy
 }
 
 
 #[derive(Debug, Clone)]
-pub enum SendType<T: Sharable> {
-    Interleaved(Vec<T>),
-    NonInterleaved(T)
+pub enum ODFormat<T: Sharable> { // Output Data Format
+    /*
+    This is a very important enum!
+    When you return data from a pipeline step, this defines how the pipeline treats that data. What do you want the pipeline to do with this data?
+    Decompose: 
+        Single Out Behavior: Errors, decomposition only supported for multi out
+        Multi Out Behavior: Gives a vector to the multi sender, each element of the vector is sent to a separate channel
+            Example: 2 channel audio data is de-interleaved, separated into 2 vectors, and processed by different branches of the pipeline
+    Series:
+        Single Out Behavior: Iterates over the vector from start to finish sending elements to a single consumer in sequence
+            Example: I am performing an overlap add convolution on some data, and need to break it into chunks. I chunk it into a vector of vectors, 
+            and return it so the sender sends each chunk separately in sequence
+        Multiple Out Behavior: Replicates above behavior but round robin on multiple channels (eg, element 0 goes to channel 0, then channel 1, then element 1 goes to channel 0 etc)
+    Repeat:
+        Resends the same data multiple times (dont know why you would want this but I put it here all the same)
+    Standard:
+        Single Out Behavior: Just sends the data as is once
+        Multiple Out Behavior: Just sends the data as is once but to many channels 
+    Selector:
+        Single Out Behavior: Error, not compatible with single out
+        Multiple Out: Step must return an index, selects which channel to send output to, and data is sent to that channel only
+    */
+    Decompose(Vec<T>),
+    Selector(T, usize),
+    Series(Vec<T>),
+    Repeat(T),
+    Standard(T)
 }
-impl<T: Sharable> SendType<T> {
+impl<T: Sharable> ODFormat<T> {
     pub fn unwrap_noninterleaved(self) -> T {
         match self {
-            SendType::NonInterleaved(x) => x,
+            ODFormat::NonInterleaved(x) => x,
             _ => panic!()
         }
     }
@@ -71,10 +105,10 @@ impl<T: Sharable> SingleSender<T> {
     pub fn new(sender: SyncSender<T>) -> Self {
         SingleSender { sender }
     }
-    pub fn send(&mut self, value: SendType<T>) -> Result<(), SendError<T>> {
+    pub fn send(&mut self, value: ODFormat<T>) -> Result<(), SendError<T>> {
         match value {
-            SendType::Interleaved(mut data_vec) => Err(SendError(data_vec.pop().unwrap())),
-            SendType::NonInterleaved(value) => self.sender.send(value),
+            ODFormat::Interleaved(mut data_vec) => Err(SendError(data_vec.pop().unwrap())),
+            ODFormat::NonInterleaved(value) => self.sender.send(value),
         }
     }
 }
@@ -109,17 +143,17 @@ impl<T: Sharable> MultiSender<T> {
             senders: Vec::new(),
         }
     }
-    pub fn send_all(&mut self, mut data: SendType<T>) -> Result<(), SendError<T>> { // all branches must be ready to receive
+    pub fn send_all(&mut self, mut data: ODFormat<T>) -> Result<(), SendError<T>> { // all branches must be ready to receive
         let mut result = Ok(());
         
         match data {
-            SendType::NonInterleaved(value) => {
+            ODFormat::NonInterleaved(value) => {
                 for index in 0..self.senders.len() {
                     result = self.senders[index].send(value.clone());
                     match &result { Err(err) => { break }, _ => () }
                 }
             }
-            SendType::Interleaved(mut value) => { // you receive an explicit condiiton from the step that the data is interleaved and each piece of data should be sent uniquely somewhere different
+            ODFormat::Interleaved(mut value) => { // you receive an explicit condiiton from the step that the data is interleaved and each piece of data should be sent uniquely somewhere different
                 value.reverse();
                 for index in 0..self.senders.len() {
                     result = self.senders[index].send(value.pop().unwrap());
@@ -194,11 +228,11 @@ pub enum NodeSender<O: Sharable> {
     Dummy
 }
 impl <O: Sharable> NodeSender<O> {
-    pub fn send(&mut self, data: SendType<O>) -> Result<(), SendError<O>> {
+    pub fn send(&mut self, data: ODFormat<O>) -> Result<(), SendError<O>> {
         match self {
             NodeSender::SO(sender) => sender.send(data),
             NodeSender::MO(sender) => sender.send_all(data),
-            NodeSender::Dummy => {Err(SendError(match data { SendType::NonInterleaved(val) => val, SendType::Interleaved(_) => panic!("How this even happens?")}))}
+            NodeSender::Dummy => {Err(SendError(match data { ODFormat::NonInterleaved(val) => val, ODFormat::Interleaved(_) => panic!("How this even happens?")}))}
         }
     }
 }

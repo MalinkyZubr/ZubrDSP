@@ -13,9 +13,9 @@ impl GaussianWindow {
     }
 }
 impl WindowFunction for GaussianWindow {
-    fn window_function(&self, sample: f32, window_size: f32) -> f32 {
-        let half_window = window_size / 2.0;
-        let square_term = ((sample - half_window) / (self.sigma * half_window)).powf(2.0);
+    fn window_function(&self, sample: u32, window_size: usize) -> f32 {
+        let half_window = window_size as f32 / 2.0;
+        let square_term = ((sample as f32 - half_window) / (self.sigma * half_window)).powf(2.0);
 
         return (-0.5 * square_term).exp();
     }
@@ -37,7 +37,10 @@ impl ConfinedGaussianWindow {
     }
 }
 impl WindowFunction for ConfinedGaussianWindow {
-    fn window_function(&self, sample: f32, window_size: f32) -> f32 {
+    fn window_function(&self, sample: u32, window_size: usize) -> f32 {
+        let window_size = window_size as f32;
+        let sample = sample as f32;
+        
         let numerator = self.gaussian_function(-0.5, window_size) * (
             self.gaussian_function(sample + window_size + 1.0, window_size) +
             self.gaussian_function(sample - window_size - 1.0, window_size)
@@ -61,7 +64,10 @@ impl TukeyWindow {
     }
 }
 impl WindowFunction for TukeyWindow { // remember the rule on wikipedia! this isnt the full story!
-    fn window_function(&self, sample: f32, window_size: f32) -> f32 {
+    fn window_function(&self, sample: u32, window_size: usize) -> f32 {
+        let window_size = window_size as f32;
+        let sample = sample as f32;
+        
         if 0.0 <= sample && sample < (self.alpha * window_size / 2.0) {
             return 0.5 * (1.0 - (2.0 * PI * sample / (self.alpha * window_size)));
         }

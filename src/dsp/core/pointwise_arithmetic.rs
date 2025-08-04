@@ -1,7 +1,7 @@
 use crate::pipeline::api::*;
 
 
-fn pointwise_arithmetic<F>(mut data: Vec<Vec<f32>>, operation: F) -> Vec<f32> 
+pub fn pointwise_arithmetic<F>(mut data: Vec<Vec<f32>>, operation: F) -> Vec<f32> 
 where F: Fn(f32, f32) -> f32 {
     let mut result_vector = data.pop().unwrap();
 

@@ -1,9 +1,22 @@
 use num::Complex;
+use std::f32::consts::PI;
 use crate::general::validation_functions::percent_error;
 use rand::seq::index::sample;
+use crate::dsp::system_response::system_functions::TransferFunction;
 
-pub trait FIRTransferFunction {
-    fn transfer_function(&self, frequency_buffer: Vec<f32>) -> Vec<Complex<f32>>; // Piecewise function defining behavior of the filter. What is y at this frequency x?
+pub trait FIRFilter {
+    fn transfer_function(&self, frequency_buffer: Vec<f32>) -> TransferFunction; // Piecewise function defining behavior of the filter. What is y at this frequency x?
+}
+
+pub fn generate_frequency_buffer(buffer_size: usize, sample_frequency: f32) -> Vec<f32> {
+    let mut pos: Vec<i64> = (0..(buffer_size as i64 / 2) + 1).collect();
+    let neg: Vec<i64> = (-(buffer_size as i64 / 2) - 1..-0).collect();
+
+    pos.extend_from_slice(neg.as_slice());
+
+    let acc = pos.iter().map(|n| *n as f32 * sample_frequency / buffer_size as f32).collect();
+
+    acc
 }
 
 pub fn maximum_frequency(sample_rate: f32) -> f32 {
