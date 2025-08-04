@@ -1,5 +1,7 @@
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel, SendError, RecvTimeoutError};
 use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use super::pipeline_traits::{Sharable, HasDefault};
 
 
@@ -9,14 +11,14 @@ pub enum ReceiveType<T: Sharable> {
     This is a very important enum!
     Single: Only a single value was received
     Reassembled: Multiple values were received and they were reassembled from a series sender somewhere previously
-    Multi: This data is the aggregation of data received from multiple channels simultaneously
+    Multichannel: This data is the aggregation of data received from multiple channels simultaneously
     Dummy: this channel is not configured
     
     The pipeline step must handle how the internal behavior responds to each of these types!
      */
     Single(T),
     Reassembled(Vec<T>),
-    Multi(Vec<T>),
+    Multichannel(Vec<T>),
     Dummy
 }
 
@@ -40,12 +42,10 @@ pub enum ODFormat<T: Sharable> { // Output Data Format
     Standard:
         Single Out Behavior: Just sends the data as is once
         Multiple Out Behavior: Just sends the data as is once but to many channels 
-    Selector:
-        Single Out Behavior: Error, not compatible with single out
-        Multiple Out: Step must return an index, selects which channel to send output to, and data is sent to that channel only
+        
+    In general: multiplexer holds exact same behavior as the single out
     */
     Decompose(Vec<T>),
-    Selector(T, usize),
     Series(Vec<T>),
     Repeat(T),
     Standard(T)
@@ -207,9 +207,22 @@ impl<T: Sharable> MultiReceiver<T> {
 
 
 #[derive(Debug)]
+pub struct Multiplexer<T: Sharable> {
+    senders: Vec<SyncSender<T>>,
+    channel: Arc<AtomicUsize> // external control for the channel selection
+}
+
+#[derive(Debug)]
+pub struct Demultiplexer<T: Sharable> {
+    receivers: Vec<WrappedReceiver<T>>,
+    channel: Arc<AtomicUsize> // external control for the channel selection
+}
+
+#[derive(Debug)]
 pub enum NodeReceiver<I: Sharable> {
     SI(SingleReceiver<I>),
     MI(MultiReceiver<I>),
+    DMI(Demultiplexer<I>),
     Dummy
 }
 impl<I: Sharable> NodeReceiver<I> {
@@ -225,6 +238,7 @@ impl<I: Sharable> NodeReceiver<I> {
 pub enum NodeSender<O: Sharable> {
     SO(SingleSender<O>),
     MO(MultiSender<O>),
+    MUO(Multiplexer<O>),
     Dummy
 }
 impl <O: Sharable> NodeSender<O> {

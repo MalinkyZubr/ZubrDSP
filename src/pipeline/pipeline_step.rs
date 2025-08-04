@@ -22,22 +22,32 @@ pub enum PipelineStepResult {
 3. at the beginning of runtime, depending on the receiver type assigned to the node, a different handler (node method) is chosen to receive, so no additional match is needed
  */
 pub trait PipelineStep<I: Sharable, O: Sharable> : Send + 'static {
-    fn run(&mut self, input: ReceiveType<I>, multi_out: bool) -> Result<SendType<O>, String>;
-    fn run_single_input(&mut self, input: I, multi_out: bool) -> Result<ODFormat<O>, String>;
-    fn run_series_input(&mut self, input: Vec<I>, multi_out: bool) -> Result<ODFormat<O>, String>;
-    fn run_multi_input(&mut self, input: I, multi_out: bool) -> Result<ODFormat<O>, String>;
+    fn run_SISO(&mut self, input: I) -> Result<ODFormat<O>, String> {
+        Err("Single in Single Out Not Implemented".to_string())
+    }
+    fn run_REASO(&mut self, input: Vec<I>) -> Result<ODFormat<O>, String> {
+        Err("Series In Single Out Not Implemented".to_string())
+    }
+    fn run_MISO(&mut self, input: Vec<I>) -> Result<ODFormat<O>, String> {
+        Err("Multiple In Single Out Not Implemented".to_string())
+    }
+    fn run_SIMO(&mut self, input: I) -> Result<ODFormat<O>, String> {
+        Err("Single In Multiple Out Not Implemented".to_string())
+    }
+    fn run_REAMO(&mut self, input: Vec<I>) -> Result<ODFormat<O>, String> {
+        Err("Series In Multiple Out Not Implemented".to_string())
+    }
+    fn run_MIMO(&mut self, input: Vec<I>) -> Result<ODFormat<O>, String> {
+        Err("Multiple In Multiple Out Not Implemented".to_string())
+    }
 }
 
 
 #[derive(Debug, Copy, Clone)]
 struct DummyStep {}
 impl<T: Sharable> PipelineStep<T, T> for DummyStep {
-    fn run(&mut self, input: ReceiveType<T>) -> Result<SendType<T>, String> {
-        match input {
-            ReceiveType::Single(t) => Ok(SendType::NonInterleaved(t)),
-            ReceiveType::Multi(_) => Err(String::from("Received multi message from pipeline step")),
-            ReceiveType::Dummy => Err(String::from("Dummy Value")),
-        }
+    fn run_SISO(&mut self, input: T) -> Result<ODFormat<T>, String> {
+        Ok(ODFormat::Standard(input))
     }
 }
 
@@ -70,8 +80,7 @@ impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> {
         match received_result {
             Err(err) => PipelineStepResult::RecvTimeoutError(err), // must have a way to handle if it is a dummy
             Ok(val) => {
-                let output_data: Result<SendType<O>, String> = step.run(val);
-                self.compute_handler(output_data)
+                self.route_computation(val, step)
             }
         }
     }
@@ -87,7 +96,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
         }
     }
 
-    fn compute_handler(&mut self, output_data: Result<SendType<O>, String>) -> PipelineStepResult {
+    fn compute_handler(&mut self, output_data: Result<ODFormat<O>, String>) -> PipelineStepResult {
         match output_data {
             Err(err) => PipelineStepResult::ComputeError(err),
             Ok(extracted_data) => match self.output.send(extracted_data) {
@@ -95,6 +104,18 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
                 Ok(_) => PipelineStepResult::Success
             }
         }
+    }
+    
+    fn route_computation(&mut self, input_data: ReceiveType<I>, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
+        self.compute_handler(match (input_data, &self.output) {
+            (ReceiveType::Single(t), NodeSender::SO(_) | NodeSender::MUO(_)) => step.run_SISO(t),
+            (ReceiveType::Single(t), NodeSender::MO(_)) => step.run_SIMO(t),
+            (ReceiveType::Multichannel(t), NodeSender::SO(_) | NodeSender::MUO(_)) => step.run_MISO(t),
+            (ReceiveType::Multichannel(t), NodeSender::MO(_)) => step.run_MIMO(t),
+            (ReceiveType::Reassembled(t), NodeSender::SO(_) | NodeSender::MUO(_)) => step.run_REASO(t),
+            (ReceiveType::Reassembled(t), NodeSender::MO(_)) => step.run_REAMO(t),
+            (_, _) => Err(String::from("Received bad message from pipeline step")),
+        })
     }
 
     pub fn attach<F: Sharable>(mut self, id: String, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
