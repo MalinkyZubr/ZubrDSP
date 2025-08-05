@@ -178,15 +178,15 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
 
         SplitBuilder { node: self }
     }
-    
+
     pub fn mutliplexer_begin(mut self, id: String, channel_selector: Arc<AtomicUsize>) -> MultiplexerBuilder<I, O> {
         self.set_id(id);
         let sender: Multiplexer<O> = Multiplexer::new(channel_selector);
         self.output = NodeSender::MUO(sender);
-        
+
         MultiplexerBuilder { node: self }
     }
-    
+
     pub fn branch_end(mut self, id: String, joint_builder: &mut JointBuilder<I, O>) {
         self.set_id(id);
         
@@ -298,7 +298,7 @@ pub struct JointBuilder<I: Sharable, O: Sharable> {
 }
 impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
     fn joint_add(&mut self, receiver: WrappedReceiver<I>) {
-        // attach an input to a joint 
+        // attach an input to a joint
         match &mut self.node.input {
             NodeReceiver::MI(node_receiver) => { node_receiver.add_receiver(receiver) }
             _ => panic!("Cannot add a joint input to a node which was not declared as a joint with joint_begin")
@@ -381,7 +381,7 @@ pub struct DemultiplexerBuilder<I: Sharable, O: Sharable> {
 }
 impl<I: Sharable, O: Sharable> DemultiplexerBuilder<I, O> {
     fn demultiplexer_add(&mut self, receiver: WrappedReceiver<I>) {
-        // attach an input to a joint 
+        // attach an input to a joint
         match &mut self.node.input {
             NodeReceiver::DMI(node_receiver) => { node_receiver.add_receiver(receiver) }
             _ => panic!("Cannot add a demultiplexer input to a node which was not declared as a demultiplexer with demultiplexer_begin")

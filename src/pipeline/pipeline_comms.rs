@@ -73,6 +73,14 @@ impl<T: Sharable + HasDefault> WrappedReceiver<T> {
         self.feedback_startup_flag = true;
         self
     }
+    fn result_handler(&self, result: &mut Result<T, RecvTimeoutError>, success_flag: &mut bool, retry_num: &mut usize) {
+        match result {
+            Err(err) => {
+                match err { RecvTimeoutError::Timeout => *retry_num += 1, _ => *success_flag = false}
+            },
+            Ok(_) => { *success_flag = true; }
+        }
+    }
     pub fn recv(&mut self, timeout: u64, retries: usize) -> Result<T, RecvTimeoutError> {
         let mut retry_num = 0;
         let mut success_flag = false;
@@ -82,12 +90,7 @@ impl<T: Sharable + HasDefault> WrappedReceiver<T> {
         while !success_flag && retry_num < retries {
             result = self.receiver.recv_timeout(Duration::from_millis(timeout));
 
-            match &mut result {
-                Err(err) => {
-                    match err { RecvTimeoutError::Timeout => {retry_num += 1; continue}, _ => success_flag = true}
-                },
-                Ok(_) => { success_flag = true; }
-            }
+            self.result_handler(&mut result, &mut success_flag, &mut retry_num);
         };
         if self.feedback_startup_flag {
             self.feedback_startup_flag = false;
@@ -105,24 +108,26 @@ impl<T: Sharable> SingleSender<T> {
     pub fn new(sender: SyncSender<T>) -> Self {
         SingleSender { sender }
     }
+    fn repeat_send(&mut self, value: T, repeats: usize, result: &mut Result<(), SendError<T>>) {
+        for _ in 0..repeats {
+            *result = self.sender.send(value.clone());
+            match &result { Err(_) => { break }, _ => () }
+        }
+    }
+    fn series_send(&mut self, value: Vec<T>, result: &mut Result<(), SendError<T>>) {
+        for point in value {
+            *result = self.sender.send(point);
+            match &result { Err(_) => { break }, _ => () }
+        }
+    }
     pub fn send(&mut self, value: ODFormat<T>) -> Result<(), SendError<T>> {
         let mut result = Ok(());
         
         match value {
             ODFormat::Decompose(mut data_vec) => result = Err(SendError(data_vec.pop().unwrap())),
             ODFormat::Standard(value) => result = self.sender.send(value),
-            ODFormat::Repeat(value, repeats) => {
-                for _ in 0..repeats {
-                    result = self.sender.send(value.clone());
-                    match &result { Err(_) => { break }, _ => () }
-                }
-            },
-            ODFormat::Series(value) => {
-                for point in value {
-                    result = self.sender.send(point);
-                    match &result { Err(_) => { break }, _ => () }
-                }
-            }
+            ODFormat::Repeat(value, repeats) => self.repeat_send(value, repeats, &mut result),
+            ODFormat::Series(value) => self.series_send(value, &mut result),
         }
         
         result
@@ -159,39 +164,42 @@ impl<T: Sharable> MultichannelSender<T> {
             senders: Vec::new(),
         }
     }
+    fn decompose_send(&mut self, value: Vec<T>, result: &mut Result<(), SendError<T>>) {
+        for (sender, point) in self.senders.iter_mut().zip(value) {
+            *result = sender.send(point);
+            match &result { Err(_) => { break }, _ => () }
+        }
+    }
+    fn standard_send(&mut self, value: T, result: &mut Result<(), SendError<T>>) {
+        for index in 0..self.senders.len() {
+            *result = self.senders[index].send(value.clone());
+            match &result { Err(_) => { break }, _ => () }
+        }
+    }
+    fn series_send(&mut self, value: Vec<T>, result: &mut Result<(), SendError<T>>) {
+        for point in value {
+            for sender in self.senders.iter_mut() {
+                *result = sender.send(point.clone());
+                match &result { Err(_) => { break }, _ => () }
+            }
+        }
+    }
+    fn repeat_send(&mut self, value: T, repeats: usize, result: &mut Result<(), SendError<T>>) {
+        for _ in 0..repeats {
+            for sender in self.senders.iter_mut() {
+                *result = sender.send(value.clone());
+                match &result { Err(_) => { break }, _ => () }
+            }
+        }
+    }
     pub fn send_all(&mut self, data: ODFormat<T>) -> Result<(), SendError<T>> { // all branches must be ready to receive
         let mut result = Ok(());
         
         match data {
-            ODFormat::Standard(value) => {
-                for index in 0..self.senders.len() {
-                    result = self.senders[index].send(value.clone());
-                    match &result { Err(_) => { break }, _ => () }
-                }
-            }
-            ODFormat::Decompose(value) => { // you receive an explicit condiiton from the step that the data is Decompose and each piece of data should be sent uniquely somewhere different
-                //for index in 0..value.len() {
-                for (sender, point) in self.senders.iter_mut().zip(value) {
-                    result = sender.send(point);
-                    match &result { Err(_) => { break }, _ => () }
-                }
-            },
-            ODFormat::Series(value) => {
-                for point in value {
-                    for sender in self.senders.iter_mut() {
-                        result = sender.send(point.clone());
-                        match &result { Err(_) => { break }, _ => () }
-                    }
-                }
-            }
-            ODFormat::Repeat(value, repeats) => {
-                for _ in 0..repeats {
-                    for sender in self.senders.iter_mut() {
-                        result = sender.send(value.clone());
-                        match &result { Err(_) => { break }, _ => () }
-                    }
-                }
-            }
+            ODFormat::Standard(value) => self.standard_send(value, &mut result),
+            ODFormat::Decompose(value) => self.decompose_send(value, &mut result),
+            ODFormat::Series(value) => self.series_send(value, &mut result),
+            ODFormat::Repeat(value, repeats) => self.repeat_send(value, repeats, &mut result),
         }
         
         result
@@ -213,6 +221,12 @@ impl<T: Sharable> MultichannelReceiver<T> {
     pub fn new(timeout: u64, retries: usize) ->  Self {
         MultichannelReceiver { receivers: Vec::new(), timeout, retries }
     }    
+    fn receive_handler(result: Result<T, RecvTimeoutError>, proceed_flag: &mut bool, output: &mut Vec<T>, return_value: &mut Result<ReceiveType<T>, RecvTimeoutError>) {
+        match result {
+            Ok(received) => { if *proceed_flag { output.push(received) }; }
+            Err(error) => { *proceed_flag = false; *return_value = Err(error); }
+        }
+    }
     pub fn receive(&mut self) -> Result<ReceiveType<T>, RecvTimeoutError> {
         let mut output = Vec::with_capacity(self.receivers.len());
         let mut proceed_flag = true;
@@ -220,10 +234,7 @@ impl<T: Sharable> MultichannelReceiver<T> {
         
         for receiver in self.receivers.iter_mut() {
             let received = receiver.recv(self.timeout, self.retries);
-            match received {
-                Ok(received) => { if proceed_flag { output.push(received) }; }
-                Err(error) => { proceed_flag = false; return_value = Err(error); }
-            }
+            Self::receive_handler(received, &mut proceed_flag, &mut output, &mut return_value);
         }
         
         if output.len() == self.receivers.len() {
@@ -253,24 +264,26 @@ impl<T: Sharable> Multiplexer<T> {
             None => Err(SendError(self.index_error_unwrap(input)))
         }
     }
+    fn repeat_send(selected_sender: &mut SyncSender<T>, value: T, repeats: usize, result: &mut Result<(), SendError<T>>) {
+        for _ in 0..repeats {
+            *result = selected_sender.send(value.clone());
+            match &result { Err(_) => { break }, _ => () }
+        }
+    }
+    fn series_send(selected_sender: &mut SyncSender<T>, value: Vec<T>, result: &mut Result<(), SendError<T>>) {
+        for unit in value  {
+            *result = selected_sender.send(unit);
+            match &result { Err(_) => { break }, _ => () }
+        }
+    }
     fn send_logic(selected_sender: &mut SyncSender<T>, input: ODFormat<T>) -> Result<(), SendError<T>> {
         let mut result = Ok(());
         
         match input {
             ODFormat::Standard(value) => result = selected_sender.send(value),
-            ODFormat::Repeat(value, repeats) => {
-                for _ in 0..repeats {
-                    result = selected_sender.send(value.clone());
-                    match &result { Err(_) => { break }, _ => () }
-                }
-            },
+            ODFormat::Repeat(value, repeats) => Self::repeat_send(selected_sender, value, repeats, &mut result),
             ODFormat::Decompose(_) => panic!("ODFormat Decompose not compatible with multiplexer"),
-            ODFormat::Series(value) => {
-                for unit in value  {
-                    result = selected_sender.send(unit);
-                    match &result { Err(_) => { break }, _ => () }
-                }
-            }
+            ODFormat::Series(value) => Self::series_send(selected_sender, value, &mut result),
         }
         
         result
