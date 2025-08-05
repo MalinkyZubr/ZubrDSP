@@ -25,14 +25,9 @@ impl ConvolutionalReassembler {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalReassembler {
-    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<SendType<Vec<u8>>, String> {
-        match input {
-            ReceiveType::Single(value) => {
-                let mut output: Vec<u8> = vec![0; value.len()];
-                self.compute_input_vector(&value, &mut output);
-                Ok(SendType::NonInterleaved(output))
-            },
-            _ => Err(String::from("Cannot process multiple inputs"))
-        }
+    fn run_SISO(&mut self, input: Vec<u8>) -> Result<ODFormat<Vec<u8>>, String> {
+        let mut output: Vec<u8> = vec![0; input.len()];
+        self.compute_input_vector(&input, &mut output);
+        Ok(ODFormat::Standard(output))
     }
 }

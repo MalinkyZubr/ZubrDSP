@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod node_tests {
     use std::sync::mpsc;
-    use crate::pipeline::api::ODFormat;
-    use crate::pipeline::pipeline::RadioPipeline;
+    use crate::pipeline::api::{ConstructingPipeline, ODFormat};
+    use crate::pipeline::api::*;
     use crate::pipeline::pipeline_step::{joint_feedback_begin, PipelineNode, PipelineStep};
     use crate::pipeline::pipeline_traits::{Source, Sink};
     use crate::pipeline::pipeline_comms::{ReceiveType};
@@ -49,29 +49,30 @@ mod node_tests {
         
         // can y[n-1] (on the pipeline scale). Mathematically this either means true y[n-1] in the case of a scalar type, or between
         // y[n - 1], y[n - k] for a k-sized vector type 
-        let mut pipeline = RadioPipeline::new(3, 1000, 1);
+        let mut pipeline = ConstructingPipeline::new(3, 1000, 1);
 
         let input_pair = mpsc::sync_channel(1);
         let (output_sender, output_receiver) = mpsc::channel();
         
         let mut feedback_joint = joint_feedback_begin("Test Feedback Joint".to_string(), &mut pipeline);
 
-        PipelineNode::start_pipeline(String::from("test_source"), Dummy1 {receiver: input_pair.1}, &mut pipeline)
-            .attach(String::from("step 1"), Dummy2 {}, &mut pipeline)
+        NodeBuilder::start_pipeline(String::from("test_source"), Dummy1 {receiver: input_pair.1}, &mut pipeline)
+            .attach(String::from("step 1"), Dummy2 {})
             .branch_end("Test input branch end".to_string(), &mut feedback_joint);
         
-        let mut lazy_node = feedback_joint.joint_add_lazy(&mut pipeline);
+        let mut lazy_node = feedback_joint.joint_add_lazy();
         
-        let mut test_split = feedback_joint.joint_lock(Dummy2 {},  &mut pipeline)
+        let mut test_split = feedback_joint.joint_lock(Dummy2 {})
             .split_begin("Test Split".to_string());
         
-        test_split.split_add("Exit Branch".to_string(), &mut pipeline)
-            .cap_pipeline("Exit".to_string(), Dummy3 {sender: output_sender}, &mut pipeline);
+        test_split.split_add("Exit Branch".to_string())
+            .cap_pipeline("Exit".to_string(), Dummy3 {sender: output_sender});
         
-        lazy_node.joint_link_lazy("Feedback Node".to_string(), Dummy2 {}, test_split.split_add("Feedback Arm".to_string(), &mut pipeline), &mut pipeline);
+        lazy_node.joint_link_lazy("Feedback Node".to_string(), Dummy2 {}, test_split.split_add("Feedback Arm".to_string()));
         
-        test_split.split_lock(Dummy2 {}, &mut pipeline);
+        test_split.split_lock(Dummy2 {});
 
+        let mut pipeline = pipeline.finish_pipeline();
         pipeline.start();
 
         input_pair.0.send(1);

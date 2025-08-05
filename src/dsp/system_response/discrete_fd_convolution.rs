@@ -41,11 +41,8 @@ impl OverlapAddChunker { // take in vec and turn it to vec of vec for overlap sa
 }
 
 impl PipelineStep<Vec<f32>, Vec<Vec<f32>>> for OverlapAddChunker { // need some way for elegant chunk processing. This is something ill be doing often
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<Vec<f32>>>, String> {
-        match input {
-            ReceiveType::Single(data) => Ok(SendType::NonInterleaved(self.generate_chunks(data))),
-            _ => Err("chunker can only take single input vector".to_string())
-        }
+    fn run_SISO(&mut self, input: Vec<f32>) -> Result<ODFormat<Vec<Vec<f32>>>, String> {
+        Ok(ODFormat::Standard(self.generate_chunks(input)))
     }
 }
 
@@ -89,12 +86,9 @@ impl OverlapAddCombiner {
         return output
     }
 }
-impl PipelineStep<Vec<Vec<f32>>, Vec<f32>> for OverlapAddCombiner { // need some way for elegant chunk processing. This is something ill be doing often
-    fn run(&mut self, input: ReceiveType<Vec<Vec<f32>>>) -> Result<SendType<Vec<f32>>, String> {
-        match input {
-            ReceiveType::Single(data) => Ok(SendType::NonInterleaved(self.recombine_chunks(data))),
-            _ => Err("chunker can only take single input vector".to_string())
-        }
+impl PipelineStep<Vec<f32>, Vec<f32>> for OverlapAddCombiner { // need some way for elegant chunk processing. This is something ill be doing often
+    fn run_REASO(&mut self, input: Vec<Vec<f32>>) -> Result<ODFormat<Vec<f32>>, String> {
+        Ok(ODFormat::Standard(self.recombine_chunks(input)))   
     }
 }
 
@@ -114,10 +108,7 @@ impl FrequencyConvolution {
     }
 }
 impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for  FrequencyConvolution {
-    fn run(&mut self, input: ReceiveType<Vec<Complex<f32>>>) -> Result<SendType<Vec<Complex<f32>>>, String> {
-        match input {
-            ReceiveType::Single(data) => Ok(SendType::NonInterleaved(self.convolve(data))),
-            _ => Err("chunker can only take single input vector".to_string())
-        }
+    fn run_SISO(&mut self, input: Vec<Complex<f32>>) -> Result<ODFormat<Vec<Complex<f32>>>, String> {
+        Ok(ODFormat::Standard(self.convolve(input)))
     }
 }

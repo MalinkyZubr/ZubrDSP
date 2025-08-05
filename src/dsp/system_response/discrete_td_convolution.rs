@@ -52,25 +52,18 @@ impl DiscreteConvolution {
         
         return output;
     }
-
-
 }
 
 
 impl PipelineStep<Vec<f32>, Vec<f32>> for DiscreteConvolution {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<f32>>, String> {
-        match (input, self.external_impulse_response) {
-            (ReceiveType::Single(value), true) => Ok(SendType::NonInterleaved(self.convolve_input(value))),
-            (ReceiveType::Multi(mut value), false) => {
-                let mut impulse_response = value.pop().unwrap();
-                impulse_response.reverse();
-                self.impulse_response.reversed_impulse_response = impulse_response;
-                let input = value.pop().unwrap();
-                Ok(SendType::NonInterleaved(self.convolve_input(input)))
-            },
-            (ReceiveType::Multi(value), true) => Err(String::from("Cannot have static transfer function for multiple inputs")),
-            (ReceiveType::Single(value), false) => Err(String::from("Must have static transfer function for single input")),
-            _ => Err(String::from("Dummy Input"))
-        }
+    fn run_SISO(&mut self, input: Vec<f32>) -> Result<ODFormat<Vec<f32>>, String> {
+        Ok(ODFormat::Standard(self.convolve_input(input)))
+    }
+    fn run_MISO(&mut self, mut input: Vec<Vec<f32>>) -> Result<ODFormat<Vec<f32>>, String> {
+        let mut impulse_response = input.pop().unwrap();
+        impulse_response.reverse();
+        self.impulse_response.reversed_impulse_response = impulse_response;
+        let input = input.pop().unwrap();
+        Ok(ODFormat::Standard(self.convolve_input(input)))
     }
 }

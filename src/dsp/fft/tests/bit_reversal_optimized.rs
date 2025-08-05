@@ -3,7 +3,7 @@ pub mod bit_reversal_fft_optimized {
     use std::time;
     use num::Complex;
     use rustfft::FftPlanner;
-    use crate::dsp::fft::{bit_reversal::FFTBitReversal, bit_reversal_optimized::FFTBitReversalOptimized};
+    use crate::dsp::fft::{bit_reversal_optimized::FFTBitReversal};
     use crate::dsp::fft::fftshift::{fft_shift, generate_frequency_axis};
     extern crate test;
 
@@ -17,7 +17,7 @@ pub mod bit_reversal_fft_optimized {
     }
 
     fn test_fft_bit_reversal(input_buffer: Vec<Complex<f32>>, true_f_domain: &Vec<Complex<f32>>) {
-        let mut fft_computer = FFTBitReversalOptimized::new(input_buffer.len(), false);
+        let mut fft_computer = FFTBitReversal::new(input_buffer.len(), false);
 
         let original_buffer = input_buffer.clone();
 
@@ -35,7 +35,7 @@ pub mod bit_reversal_fft_optimized {
     }
 
     fn test_fft_bit_reversal_comparative(input_buffer: Vec<Complex<f32>>) {
-        let mut fft_computer = FFTBitReversalOptimized::new(input_buffer.len(), false);
+        let mut fft_computer = FFTBitReversal::new(input_buffer.len(), false);
 
         let original_buffer = input_buffer.clone();
 
@@ -60,7 +60,7 @@ pub mod bit_reversal_fft_optimized {
 
     fn bit_reversal_tester(inputs_outputs: Vec<(usize, usize, usize)>) {
         for (input, string_size, expected_output) in inputs_outputs.iter() {
-            assert!(FFTBitReversalOptimized::get_bit_reversal(*input, *string_size) == * expected_output);
+            assert!(FFTBitReversal::get_bit_reversal(*input, *string_size) == * expected_output);
         }
     }
 

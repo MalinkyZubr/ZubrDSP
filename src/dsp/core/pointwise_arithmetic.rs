@@ -15,22 +15,18 @@ where F: Fn(f32, f32) -> f32 {
 }
 
 
-pub struct PointwiseAdder {}
+pub struct PointwiseAdder {
+    constant_coefficient: f32
+}
 impl PointwiseAdder {
-    pub fn new() -> PointwiseAdder {
-        PointwiseAdder {}
+    pub fn new(coefficient: f32) -> PointwiseAdder {
+        PointwiseAdder { constant_coefficient: coefficient }
     }
 }
 impl PipelineStep<Vec<f32>, Vec<f32>> for PointwiseAdder {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<f32>>, String> {
-        match input {
-            ReceiveType::Multi(data) => {
-                let result_vector = pointwise_arithmetic(data, |x, y| x + y);
-                
-                Ok(SendType::NonInterleaved(result_vector))
-            },
-            _ => Err("Expecting multiple vector inputs fopr pointwise adder".to_string()),
-        }
+    fn run_MISO(&mut self, input: Vec<Vec<f32>>) -> Result<ODFormat<Vec<f32>>, String> {
+        let result_vector = pointwise_arithmetic(input, |x, y| (x + y) * self.constant_coefficient);
+        Ok(ODFormat::Standard(result_vector))
     }
 }
 
@@ -42,15 +38,10 @@ impl PointwiseSubtractor {
     }
 }
 impl PipelineStep<Vec<f32>, Vec<f32>> for PointwiseSubtractor {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<f32>>, String> {
-        match input {
-            ReceiveType::Multi(mut data) => {
-                let result_vector = pointwise_arithmetic(data, |x, y| x - y);
+    fn run_MISO(&mut self, input: Vec<Vec<f32>>) -> Result<ODFormat<Vec<f32>>, String> {
+        let result_vector = pointwise_arithmetic(input, |x, y| x - y);
 
-                Ok(SendType::NonInterleaved(result_vector))
-            },
-            _ => Err("Expecting multiple vector inputs fopr pointwise adder".to_string()),
-        }
+        Ok(ODFormat::Standard(result_vector))
     }
 }
 
@@ -62,15 +53,10 @@ impl PointwiseMultiplier {
     }
 }
 impl PipelineStep<Vec<f32>, Vec<f32>> for PointwiseMultiplier {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<f32>>, String> {
-        match input {
-            ReceiveType::Multi(mut data) => {
-                let result_vector = pointwise_arithmetic(data, |x, y| x * y);
+    fn run_MISO(&mut self, input: Vec<Vec<f32>>) -> Result<ODFormat<Vec<f32>>, String> {
+        let result_vector = pointwise_arithmetic(input, |x, y| x * y);
 
-                Ok(SendType::NonInterleaved(result_vector))
-            },
-            _ => Err("Expecting multiple vector inputs fopr pointwise adder".to_string()),
-        }
+        Ok(ODFormat::Standard(result_vector))
     }
 }
 
@@ -82,14 +68,9 @@ impl PointwiseDivider {
     }
 }
 impl PipelineStep<Vec<f32>, Vec<f32>> for PointwiseDivider {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<f32>>, String> {
-        match input {
-            ReceiveType::Multi(mut data) => {
-                let result_vector = pointwise_arithmetic(data, |x, y| x / y);
+    fn run_MISO(&mut self, input: Vec<Vec<f32>>) -> Result<ODFormat<Vec<f32>>, String> {
+        let result_vector = pointwise_arithmetic(input, |x, y| x / y);
 
-                Ok(SendType::NonInterleaved(result_vector))
-            },
-            _ => Err("Expecting multiple vector inputs fopr pointwise adder".to_string()),
-        }
+        Ok(ODFormat::Standard(result_vector))
     }
 }

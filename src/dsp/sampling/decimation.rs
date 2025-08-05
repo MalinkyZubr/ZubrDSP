@@ -18,10 +18,7 @@ impl Decimator {
     }
 }
 impl PipelineStep<Vec<f32>, Vec<f32>> for Decimator {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<f32>>, String> {
-        match input {
-            ReceiveType::Single(value) => Ok(SendType::NonInterleaved(value)),
-            _ => Err("Not a single sample".to_string())
-        }
+    fn run_SISO(&mut self, input: Vec<f32>) -> Result<ODFormat<Vec<f32>>, String> { 
+        Ok(ODFormat::Standard(input))
     }
 }

@@ -164,10 +164,7 @@ impl ViterbiOpCore {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ViterbiOpCore {
-    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<SendType<Vec<u8>>, String> {
-        match input {
-            ReceiveType::Single(value) => Ok(SendType::NonInterleaved(self.viterbi(&value).1)),
-            _ => Err(String::from("multi receive type not allowed"))
-        }
+    fn run_SISO(&mut self, value: Vec<u8>) -> Result<ODFormat<Vec<u8>>, String> {
+        Ok(ODFormat::Standard(self.viterbi(&value).1))
     }
 }

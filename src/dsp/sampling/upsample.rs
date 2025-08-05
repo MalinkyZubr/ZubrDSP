@@ -1,6 +1,6 @@
 use crate::pipeline::api::*;
 use crate::pipeline::api::ReceiveType::Single;
-use crate::pipeline::api::SendType::NonInterleaved;
+use crate::pipeline::api::*;
 
 pub struct Upsampler {
     upsample_factor: usize // there will be n * upsample_factor samples after. For every sample add upsample_factor - 1 samples
@@ -24,10 +24,7 @@ impl Upsampler { // note, I only insert the 0 samples. Still need a low pass fil
     }
 }
 impl PipelineStep<Vec<f32>, Vec<f32>> for Upsampler {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<f32>>, String> {
-        match input {
-            Single(value) => Ok(SendType::NonInterleaved(self.insert_0_samples(&value))),
-            _ => Err("Upsampler doesn't support multi input.".to_string())
-        }
+    fn run_SISO(&mut self, input: Vec<f32>) -> Result<ODFormat<Vec<f32>>, String> {
+        Ok(ODFormat::Standard(self.insert_0_samples(&input)))
     }
 }

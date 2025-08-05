@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod node_tests {
     use std::sync::mpsc;
-    use crate::pipeline::pipeline::RadioPipeline;
-    use crate::pipeline::pipeline_step::{PipelineNode, PipelineStep, JointBuilder, joint_begin};
-    use crate::pipeline::pipeline_traits::{Source, Sink};
+    use crate::pipeline::api::ConstructingPipeline;
+    use crate::pipeline::api::*;
     use crate::pipeline::pipeline_comms::{ReceiveType, ODFormat};
 
 
@@ -41,30 +40,32 @@ mod node_tests {
 
     #[test]
     fn test_branch_pipeline_assembly() {
-        let mut pipeline = RadioPipeline::new(3, 1000, 1);
+        let mut pipeline = ConstructingPipeline::new(3, 1000, 1);
 
         let input_pair = mpsc::sync_channel(1);
         let (output_sender, output_receiver) = mpsc::channel();
         
-        let mut split = PipelineNode::start_pipeline(String::from("test_source"), Dummy1 {receiver: input_pair.1}, &mut pipeline)
-            .attach(String::from("step 1"), Dummy2 {}, &mut pipeline).split_begin("test_split".to_string());
+        let mut split = NodeBuilder::start_pipeline(String::from("test_source"), Dummy1 {receiver: input_pair.1}, &mut pipeline)
+            .attach(String::from("step 1"), Dummy2 {}).split_begin("test_split".to_string());
 
         let mut test_joint = joint_begin("Test Joint".to_string(), &mut pipeline);
         
-        split.split_add("Test Branch 1".to_string(), &mut pipeline)
-            .attach("branch_1 node 1".to_string(), Dummy2 {},  &mut pipeline)
-            .attach("branch_1 node 2".to_string(), Dummy2 {},  &mut pipeline)
+        split.split_add("Test Branch 1".to_string())
+            .attach("branch_1 node 1".to_string(), Dummy2 {})
+            .attach("branch_1 node 2".to_string(), Dummy2 {})
             .branch_end("branch_1 node 3 end".to_string(), &mut test_joint);
         
-        split.split_add("Test Branch 2".to_string(), &mut pipeline)
-            .attach("branch_2 node 1".to_string(), Dummy2 {},  &mut pipeline)
+        split.split_add("Test Branch 2".to_string())
+            .attach("branch_2 node 1".to_string(), Dummy2 {})
             .branch_end("branch_2 node 2 end".to_string(), &mut test_joint);
         
-        split.split_lock(Dummy2 {}, &mut pipeline);
+        split.split_lock(Dummy2 {});
         
-        test_joint.joint_lock(Dummy2 {}, &mut pipeline)
-            .attach("Post Joint Test Node".to_string(), Dummy2 {},  &mut pipeline)
-            .cap_pipeline("Test Cap".to_string(), Dummy3 { sender: output_sender.clone() }, &mut pipeline);
+        test_joint.joint_lock(Dummy2 {})
+            .attach("Post Joint Test Node".to_string(), Dummy2 {})
+            .cap_pipeline("Test Cap".to_string(), Dummy3 { sender: output_sender.clone() });
+        
+        let mut pipeline = pipeline.finish_pipeline();
         
         pipeline.start();
 

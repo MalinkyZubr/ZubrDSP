@@ -8,24 +8,61 @@ use std::thread::{self, JoinHandle};
 use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use crossbeam_queue::SegQueue;
 
 
-pub struct RadioPipeline {
-    pub nodes: Vec<PipelineThread>,
-    //dummy_manager: DummyManager
+pub type ConstructionQueue = Arc<SegQueue<PipelineThread>>;
+
+
+#[derive(Clone)]
+pub struct PipelineParameters {
     pub retries: usize,
     pub timeout: u64,
     pub backpressure_val: usize
 }
-impl RadioPipeline {
-    pub fn new(retries: usize, timeout: u64, backpressure_val: usize) -> RadioPipeline {
-        RadioPipeline{
-            nodes: Vec::new(), 
-            retries, timeout, backpressure_val
-            //dummy_manager: DummyManager::new()
+impl PipelineParameters {
+    pub fn new(retries: usize, timeout: u64, backpressure_val: usize) -> PipelineParameters {
+        Self {
+            retries,
+            timeout,
+            backpressure_val,
         }
     }
-    
+}
+
+
+pub struct ConstructingPipeline {
+    nodes: ConstructionQueue,
+    pub parameters: PipelineParameters
+}
+impl ConstructingPipeline {
+    pub fn new(retries: usize, timeout: u64, backpressure_val: usize) -> Self {
+        let parameters = PipelineParameters::new(retries, timeout, backpressure_val);
+        Self {
+            nodes: Arc::new(SegQueue::new()),
+            parameters
+        }
+    }
+    pub fn get_nodes(&self) -> ConstructionQueue {
+        self.nodes.clone()
+    }
+    pub fn finish_pipeline(mut self) -> ActivePipeline {
+        let mut static_nodes = Vec::with_capacity(self.nodes.len());
+        
+        while self.nodes.len() > 0 {
+            static_nodes.push(self.nodes.pop().unwrap());
+        }
+        
+        ActivePipeline { nodes: static_nodes, parameters: self.parameters }
+    }
+}
+
+
+pub struct ActivePipeline {
+    nodes: Vec<PipelineThread>,
+    parameters: PipelineParameters
+}
+impl ActivePipeline {
     pub fn start(&mut self) {
         //self.dummy_manager.start();
         for node in self.nodes.iter_mut() {

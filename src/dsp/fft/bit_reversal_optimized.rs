@@ -7,11 +7,10 @@ use crate::general::parallel_computation::{self, *};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use crate::pipeline::api::ReceiveType;
 use crate::pipeline::api::*;
-use super::bit_reversal::*;
 
 
 // static twiddle computation is less time efficient, apparently. Cache really makes a difference
-pub struct FFTBitReversalOptimized { // log_2(n) levels to the n sized fft for radix 2, nlogn total space in the vector
+pub struct FFTBitReversal { // log_2(n) levels to the n sized fft for radix 2, nlogn total space in the vector
     bit_reversal_mapping: Vec<usize>,
     fft_size: usize,
     twiddle_factors: Vec<Complex<f32>>,
@@ -20,11 +19,11 @@ pub struct FFTBitReversalOptimized { // log_2(n) levels to the n sized fft for r
     is_ifft: bool
 }
 
-impl FFTBitReversalOptimized {
+impl FFTBitReversal {
     pub fn new(buffer_size: usize, is_ifft: bool) -> Self {
         let index_bits_needed = (buffer_size as f64).log2() as usize;
         
-        FFTBitReversalOptimized { 
+        FFTBitReversal { 
             bit_reversal_mapping: Self::generate_bit_reversal_mapping(buffer_size, index_bits_needed),
             fft_size: buffer_size,
             twiddle_factors: Self::compute_twiddle_factors(buffer_size),
@@ -174,18 +173,13 @@ impl FFTBitReversalOptimized {
 }
 
 
-impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FFTBitReversalOptimized {
-    fn run(&mut self, input: ReceiveType<Vec<Complex<f32>>>) -> Result<SendType<Vec<Complex<f32>>>, String> {
-        match input {
-            ReceiveType::Single(value) => {
-                if self.is_ifft {
-                    Ok(SendType::NonInterleaved(self.ifft(value)))
-                }
-                else {
-                    Ok(SendType::NonInterleaved(self.fft(value)))
-                }
-            }
-            _ => Err(String::from("Cannot take multiple inputs"))
+impl PipelineStep<Vec<Complex<f32>>, Vec<Complex<f32>>> for FFTBitReversal {
+    fn run_SISO(&mut self, input: Vec<Complex<f32>>) -> Result<ODFormat<Vec<Complex<f32>>>, String> {
+        if self.is_ifft {
+            Ok(ODFormat::Standard(self.ifft(input)))
+        }
+        else {
+            Ok(ODFormat::Standard(self.fft(input)))
         }
     }
 }

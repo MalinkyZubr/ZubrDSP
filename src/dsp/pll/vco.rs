@@ -20,13 +20,8 @@ impl VCO {
 }
 
 impl PipelineStep<Vec<f32>, Vec<f32>> for VCO {
-    fn run(&mut self, input: ReceiveType<Vec<f32>>) -> Result<SendType<Vec<f32>>, String> {
-        match input {
-            ReceiveType::Single(mut data) => {
-                self.process_input_vector(&mut data);
-                Ok(SendType::NonInterleaved(data))
-            }
-            _ => { Err("multi input not implemented".to_string())}
-        }
+    fn run_SISO(&mut self, mut input: Vec<f32>) -> Result<ODFormat<Vec<f32>>, String> {
+        self.process_input_vector(&mut input);
+        Ok(ODFormat::Standard(input))
     }
 }

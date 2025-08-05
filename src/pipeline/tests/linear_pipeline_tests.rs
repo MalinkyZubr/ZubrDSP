@@ -2,10 +2,7 @@
 mod node_tests {
     use std::sync::mpsc;
     use std::thread::sleep;
-    use crate::pipeline::pipeline::RadioPipeline;
-    use crate::pipeline::pipeline_step::{PipelineNode, PipelineStep};
-    use crate::pipeline::pipeline_traits::{Source, Sink};
-    use crate::pipeline::pipeline_comms::{ReceiveType, ODFormat};
+    use crate::pipeline::api::*;
     use super::*;
 
 
@@ -40,16 +37,15 @@ mod node_tests {
     
     #[test]
     fn test_pipeline_assembly() {
-        let mut pipeline = RadioPipeline::new(3, 1000, 1);
-
+        let mut pipeline = ConstructingPipeline::new(3, 1000, 1);
         let input_pair = mpsc::sync_channel(1);
         let (output_sender, output_receiver) = mpsc::channel();
         
-        PipelineNode::start_pipeline(String::from("test_source"), Dummy1 {receiver: input_pair.1}, &mut pipeline)
-            .attach(String::from("step 1"), Dummy2 {}, &mut pipeline)
-            .cap_pipeline(String::from("step 2"), Dummy3 {sender: output_sender}, &mut pipeline);
+        NodeBuilder::start_pipeline(String::from("test_source"), Dummy1 { receiver: input_pair.1 }, &pipeline)
+            .attach(String::from("step 1"), Dummy2 {})
+            .cap_pipeline(String::from("step 2"), Dummy3 { sender: output_sender });
 
-        pipeline.start();
+        let mut pipeline = pipeline.finish_pipeline();
 
         input_pair.0.send(1).unwrap();
         let result = output_receiver.recv().unwrap();

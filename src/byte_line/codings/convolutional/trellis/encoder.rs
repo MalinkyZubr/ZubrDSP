@@ -27,12 +27,9 @@ pub struct ConvolutionalEncoder {
 }
 
 impl PipelineStep<Vec<u8>, Vec<u8>> for ConvolutionalEncoder {
-    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<SendType<Vec<u8>>, String> {
+    fn run_SISO(&mut self, input: Vec<u8>) -> Result<ODFormat<Vec<u8>>, String> {
         // Remove Option handling and use input directly
-        match input {
-            ReceiveType::Single(value) => Ok(SendType::NonInterleaved(self.consumer.consume(&value))),
-            _ => Err(String::from("Cannot process multiple inputs"))
-        }
+        Ok(ODFormat::Standard(self.consumer.consume(&input)))
     }
 }
 

@@ -74,10 +74,7 @@ impl PhaseVectorGenerator {
 }
 
 impl PipelineStep<Vec<u8>, Vec<f32>> for PhaseVectorGenerator {
-    fn run(&mut self, input: ReceiveType<Vec<u8>>) -> Result<SendType<Vec<f32>>, String> {
-        match input {
-            ReceiveType::Single(val) => Ok(SendType::NonInterleaved(self.generate_phase(&val))),
-            _ => Err(String::from("Cannot take multiple inputs"))
-        }
+    fn run_SISO(&mut self, input: Vec<u8>) -> Result<ODFormat<Vec<f32>>, String> {
+        Ok(ODFormat::Standard(self.generate_phase(&input)))
     }
 }
