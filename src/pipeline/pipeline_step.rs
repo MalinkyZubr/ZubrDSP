@@ -4,7 +4,7 @@ use std::sync::mpsc::{RecvTimeoutError};
 use crate::pipeline::pipeline::RadioPipeline;
 use super::pipeline_thread::PipelineThread;
 use super::pipeline_traits::{Sharable, Unit, HasID, Source, Sink};
-use super::pipeline_comms::{WrappedReceiver, NodeReceiver, NodeSender, MultiReceiver, MultiSender, ReceiveType, SingleReceiver, ODFormat, SingleSender};
+use super::pipeline_comms::{WrappedReceiver, NodeReceiver, NodeSender, MultichannelReceiver, MultichannelSender, ReceiveType, SingleReceiver, ODFormat, SingleSender, Reassembler, Multiplexer, Demultiplexer};
 
 
 #[derive(Debug)]
@@ -73,7 +73,7 @@ impl<I: Sharable, O: Sharable> HasID for PipelineNode<I, O> {
 }
 
 
-impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> {
+impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> { // have separate builder structs for special components like branching and multiplexing to reduce complexity.
     fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
         let received_result = self.input.receive();
         //println!("{}======={:?}", &self.id, &received_result);
@@ -173,7 +173,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
 
         let start_node: PipelineNode<I, O> = PipelineNode {
             input: NodeReceiver::Dummy,
-            output: NodeSender::MO(MultiSender::new()),
+            output: NodeSender::MO(MultichannelSender::new()),
             id: start_id,
         };
 
@@ -184,7 +184,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
         // take the node outputted by a previous step in the builder and declare it as multiple out
         // allows the node to have multiple outputs appended
         self.set_id(id);
-        let sender: MultiSender<O> = MultiSender::new();
+        let sender: MultichannelSender<O> = MultichannelSender::new();
         self.output = NodeSender::MO(sender);
 
         self
@@ -227,16 +227,16 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
         self.set_id(id);
         
         match self.input {
-            NodeReceiver::MI(_) => panic!("Cannot end branch with multiple in"),
             NodeReceiver::SI(receiver) => joint.joint_add(receiver.extract_receiver()),
             NodeReceiver::Dummy => panic!("Cannot end branch with Dummy"),
+            _ => panic!("Must end branch with single. This should be automatic behavior")
         }
     }
     
     pub fn joint_begin<JI: Sharable, JO: Sharable>(&mut self, id: String, pipeline: &mut RadioPipeline) -> PipelineNode<JI, JO> {
         // create a node marked as a join which can take multiple input receivers. used to join multiple sub branches together (eg adder or something)
         let mut joint_node: PipelineNode<JI, JO> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy,  id: id };
-        joint_node.input = NodeReceiver::MI(MultiReceiver::new(pipeline.timeout, pipeline.retries));
+        joint_node.input = NodeReceiver::MI(MultichannelReceiver::new(pipeline.timeout, pipeline.retries));
         
         joint_node
     }
@@ -316,14 +316,30 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
             _ => panic!("Feedback joint cannot handle multiple input previous node"),
         }
     }
+
+    pub fn set_reassembler(mut self, reassemble_quantity: usize, pipeline: &mut RadioPipeline) -> Self {
+        match self.input {
+            NodeReceiver::SI(receiver) => {
+                self.input = NodeReceiver::REA(Reassembler::new(receiver.extract_receiver(), reassemble_quantity, pipeline.timeout, pipeline.retries))
+            }
+            _ => panic!("Cannot set reassembler on this node, must be a single receiver node"),
+        }
+        
+        self
+    }
 }
 
 pub fn joint_feedback_begin<I: Sharable, O: Sharable>(id: String, pipeline: &mut RadioPipeline) -> PipelineNode<I, O> {
     // Since there is no convenient origin point for a joint used in feedback in the pattern, a standalone function is needed to support type inference
     let mut joint_node: PipelineNode<I, O> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy,  id: id };
-    joint_node.input = NodeReceiver::MI(MultiReceiver::new(pipeline.timeout, pipeline.retries));
+    joint_node.input = NodeReceiver::MI(MultichannelReceiver::new(pipeline.timeout, pipeline.retries));
 
     joint_node
+}
+
+
+pub struct StandardNode {
+    
 }
 
 
