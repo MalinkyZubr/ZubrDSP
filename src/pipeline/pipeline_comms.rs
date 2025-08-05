@@ -1,8 +1,7 @@
-use std::sync::mpsc::{Receiver, SyncSender, sync_channel, SendError, RecvTimeoutError};
+use std::sync::mpsc::{Receiver, SyncSender, SendError, RecvTimeoutError};
 use std::time::Duration;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use futures::SinkExt;
 use super::pipeline_traits::{Sharable, HasDefault};
 
 
@@ -52,7 +51,7 @@ pub enum ODFormat<T: Sharable> { // Output Data Format
     Standard(T)
 }
 impl<T: Sharable> ODFormat<T> {
-    pub fn unwrap_Standard(self) -> T {
+    pub fn unwrap_standard(self) -> T {
         match self {
             ODFormat::Standard(x) => x,
             _ => panic!()
@@ -113,15 +112,15 @@ impl<T: Sharable> SingleSender<T> {
             ODFormat::Decompose(mut data_vec) => result = Err(SendError(data_vec.pop().unwrap())),
             ODFormat::Standard(value) => result = self.sender.send(value),
             ODFormat::Repeat(value, repeats) => {
-                for _ in 0..*repeats {
+                for _ in 0..repeats {
                     result = self.sender.send(value.clone());
-                    match &result { Err(err) => { break }, _ => () }
+                    match &result { Err(_) => { break }, _ => () }
                 }
             },
             ODFormat::Series(value) => {
                 for point in value {
                     result = self.sender.send(point);
-                    match &result { Err(err) => { break }, _ => () }
+                    match &result { Err(_) => { break }, _ => () }
                 }
             }
         }
@@ -160,35 +159,36 @@ impl<T: Sharable> MultichannelSender<T> {
             senders: Vec::new(),
         }
     }
-    pub fn send_all(&mut self, mut data: ODFormat<T>) -> Result<(), SendError<T>> { // all branches must be ready to receive
+    pub fn send_all(&mut self, data: ODFormat<T>) -> Result<(), SendError<T>> { // all branches must be ready to receive
         let mut result = Ok(());
         
         match data {
             ODFormat::Standard(value) => {
                 for index in 0..self.senders.len() {
                     result = self.senders[index].send(value.clone());
-                    match &result { Err(err) => { break }, _ => () }
+                    match &result { Err(_) => { break }, _ => () }
                 }
             }
-            ODFormat::Decompose(mut value) => { // you receive an explicit condiiton from the step that the data is Decompose and each piece of data should be sent uniquely somewhere different
-                for (point, sender) in value.iter().zip(self.senders.iter_mut()) {
+            ODFormat::Decompose(value) => { // you receive an explicit condiiton from the step that the data is Decompose and each piece of data should be sent uniquely somewhere different
+                //for index in 0..value.len() {
+                for (sender, point) in self.senders.iter_mut().zip(value) {
                     result = sender.send(point);
-                    match &result { Err(err) => { break }, _ => () }
+                    match &result { Err(_) => { break }, _ => () }
                 }
             },
             ODFormat::Series(value) => {
                 for point in value {
                     for sender in self.senders.iter_mut() {
                         result = sender.send(point.clone());
-                        match &result { Err(err) => { break }, _ => () }
+                        match &result { Err(_) => { break }, _ => () }
                     }
                 }
             }
             ODFormat::Repeat(value, repeats) => {
-                for _ in 0..*repeats {
+                for _ in 0..repeats {
                     for sender in self.senders.iter_mut() {
                         result = sender.send(value.clone());
-                        match &result { Err(err) => { break }, _ => () }
+                        match &result { Err(_) => { break }, _ => () }
                     }
                 }
             }
@@ -248,26 +248,32 @@ impl<T: Sharable> Multiplexer<T> {
         Multiplexer { senders: Vec::new(), channel }
     }
     pub fn send(&mut self, input: ODFormat<T>) -> Result<(), SendError<T>> {
-        match self.senders.get(self.channel.load(Ordering::Acquire)) {
-            Ok(sender) => self.send_logic(sender, input),
-            Err(_) => Err(self.index_error_unwrap(input))
+        match self.senders.get_mut(self.channel.load(Ordering::Acquire)) {
+            Some(sender) => Self::send_logic(sender, input),
+            None => Err(SendError(self.index_error_unwrap(input)))
         }
     }
-    fn send_logic(&mut self, selected_sender: &mut SyncSender<T>, input: ODFormat<T>) -> Result<(), SendError<T>> {
+    fn send_logic(selected_sender: &mut SyncSender<T>, input: ODFormat<T>) -> Result<(), SendError<T>> {
+        let mut result = Ok(());
+        
         match input {
-            ODFormat::Standard(value) => selected_sender.send(value),
+            ODFormat::Standard(value) => result = selected_sender.send(value),
             ODFormat::Repeat(value, repeats) => {
-                for _ in 0..*repeats {
-                    selected_sender.send(value.clone())
+                for _ in 0..repeats {
+                    result = selected_sender.send(value.clone());
+                    match &result { Err(_) => { break }, _ => () }
                 }
             },
             ODFormat::Decompose(_) => panic!("ODFormat Decompose not compatible with multiplexer"),
             ODFormat::Series(value) => {
                 for unit in value  {
-                    selected_sender.send(unit)
+                    result = selected_sender.send(unit);
+                    match &result { Err(_) => { break }, _ => () }
                 }
             }
         }
+        
+        result
     }
     fn index_error_unwrap(&self, input: ODFormat<T>) -> T {
         match input {
@@ -284,18 +290,21 @@ impl<T: Sharable> Multiplexer<T> {
 #[derive(Debug)]
 pub struct Demultiplexer<T: Sharable> {
     receivers: Vec<WrappedReceiver<T>>,
-    channel: Arc<AtomicUsize> // external control for the channel selection
+    channel: Arc<AtomicUsize>, // external control for the channel selection
+    timeout: u64,
+    retries: usize,
 }
 impl<T: Sharable> Demultiplexer<T> {
-    pub fn new(channel: Arc<AtomicUsize>) -> Demultiplexer<T> {
-        Demultiplexer { receivers: Vec::new(), channel }
+    pub fn new(channel: Arc<AtomicUsize>, timeout: u64, retries: usize) -> Demultiplexer<T> {
+        Demultiplexer { receivers: Vec::new(), channel, timeout, retries }
     }
     pub fn receive(&mut self) -> Result<ReceiveType<T>, RecvTimeoutError> {
-        match self.receivers.get(self.channel.load(Ordering::Acquire)) {
-            Ok(receiver) => { match receiver.recv() {
-                Ok(received) => Ok(ReceiveType::Single(received))
+        match self.receivers.get_mut(self.channel.load(Ordering::Acquire)) {
+            Some(receiver) => { match receiver.recv(self.timeout, self.retries) {
+                Ok(received) => Ok(ReceiveType::Single(received)),
+                Err(err) => Err(err)
             }},
-            Err(_) => Err(RecvTimeoutError::Disconnected)
+            None => Err(RecvTimeoutError::Disconnected)
         }
     }
     pub fn add_receiver(&mut self, receiver: WrappedReceiver<T>) {

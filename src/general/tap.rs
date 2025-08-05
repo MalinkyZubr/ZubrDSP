@@ -11,10 +11,7 @@ impl<T> TapStep<T> {
     }
 }
 impl<T: Sharable> PipelineStep<T, T> for TapStep<T> {
-    fn run(&mut self, input: ReceiveType<T>) -> Result<SendType<T>, String> {
-        match input {
-            ReceiveType::Single(value) => { self.tap_sender.send(value.clone()).unwrap(); Ok(SendType::NonInterleaved(value)) },
-            _ => Err(String::from("Unexpected receive type."))
-        }
+    fn run_SISO(&mut self, input: T) -> Result<ODFormat<T>, String> {
+        self.tap_sender.send(input.clone()).unwrap(); Ok(ODFormat::Standard(input))
     }
 }

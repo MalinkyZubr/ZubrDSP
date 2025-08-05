@@ -1,6 +1,9 @@
 use std::fmt::Debug;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::mpsc;
 use std::sync::mpsc::{RecvTimeoutError};
+use std::sync::Arc;
+use futures::future::Lazy;
 use crate::pipeline::pipeline::RadioPipeline;
 use super::pipeline_thread::PipelineThread;
 use super::pipeline_traits::{Sharable, Unit, HasID, Source, Sink};
@@ -166,155 +169,40 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
         return successor;
     }
 
-    pub fn start_pipeline_interleaved(start_id: String, pipeline: &mut RadioPipeline) -> PipelineNode<I, O>
-    where I: Unit {
-        // start a pipeline in interleaved mode, assuming the source itself will need to send multiple outputs
-        let (sender, receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
-
-        let start_node: PipelineNode<I, O> = PipelineNode {
-            input: NodeReceiver::Dummy,
-            output: NodeSender::MO(MultichannelSender::new()),
-            id: start_id,
-        };
-
-        start_node
-    }
-    
-    pub fn split_begin(mut self, id: String) -> PipelineNode<I, O> {
+    pub fn split_begin(mut self, id: String) -> SplitBuilder<I, O> {
         // take the node outputted by a previous step in the builder and declare it as multiple out
         // allows the node to have multiple outputs appended
         self.set_id(id);
         let sender: MultichannelSender<O> = MultichannelSender::new();
         self.output = NodeSender::MO(sender);
 
-        self
-    }
-
-    pub fn split_add<F: Sharable>(&mut self, branch_name: String, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
-        // equivalent of start_pipeline for a subbranch of a flow diagram. generates an entry in the split for the branch
-        // returns the head of the new branch which can be attached to like a normal linear pipeline
-        match &mut self.output {
-            NodeSender::MO(node_sender) => {
-                let (split_sender, split_receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
-                node_sender.add_sender(split_sender);
-                
-                let (successor_sender, successor_receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
-                
-                let dummy_receiver = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(split_receiver), pipeline.timeout,  pipeline.retries));
-                let dummy_attacher_node: PipelineNode<O, O> = PipelineNode { input: dummy_receiver, output: NodeSender::SO(SingleSender::new(successor_sender)), id: branch_name };
-                
-                let mut successor: PipelineNode<O, F> = PipelineNode::new();
-                
-                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(successor_receiver), pipeline.timeout, pipeline.retries));
-
-                let dummy_step = DummyStep {};
-                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node);
-                pipeline.nodes.push(new_thread);
-
-                return successor;
-            }
-            _ => panic!("To add a split branch you must declare a node as a splitter with split_begin!")
-        }
-    }
-
-    pub fn split_lock(self, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) {
-        // submit the split to the thread pool, preventing any more branches from being added and making it computable
-        let new_thread = PipelineThread::new(step, self);
-        pipeline.nodes.push(new_thread);
+        SplitBuilder { node: self }
     }
     
-    pub fn branch_end(mut self, id: String, joint: &mut PipelineNode<I, O>) {
+    pub fn mutliplexer_begin(mut self, id: String, channel_selector: Arc<AtomicUsize>) -> MultiplexerBuilder<I, O> {
+        self.set_id(id);
+        let sender: Multiplexer<O> = Multiplexer::new(channel_selector);
+        self.output = NodeSender::MUO(sender);
+        
+        MultiplexerBuilder { node: self }
+    }
+    
+    pub fn branch_end(mut self, id: String, joint_builder: &mut JointBuilder<I, O>) {
         self.set_id(id);
         
         match self.input {
-            NodeReceiver::SI(receiver) => joint.joint_add(receiver.extract_receiver()),
+            NodeReceiver::SI(receiver) => joint_builder.joint_add(receiver.extract_receiver()),
             NodeReceiver::Dummy => panic!("Cannot end branch with Dummy"),
             _ => panic!("Must end branch with single. This should be automatic behavior")
         }
     }
-    
-    pub fn joint_begin<JI: Sharable, JO: Sharable>(&mut self, id: String, pipeline: &mut RadioPipeline) -> PipelineNode<JI, JO> {
+
+    pub fn demultiplexer_begin<JI: Sharable, JO: Sharable>(&mut self, id: String, pipeline: &mut RadioPipeline, channel_selector: Arc<AtomicUsize>) -> JointBuilder<JI, JO> {
         // create a node marked as a join which can take multiple input receivers. used to join multiple sub branches together (eg adder or something)
         let mut joint_node: PipelineNode<JI, JO> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy,  id: id };
-        joint_node.input = NodeReceiver::MI(MultichannelReceiver::new(pipeline.timeout, pipeline.retries));
-        
-        joint_node
-    }
-    
-    fn joint_add(&mut self, receiver: WrappedReceiver<I>) {
-        // attach an input to a joint 
-        match &mut self.input {
-            NodeReceiver::MI(node_receiver) => { node_receiver.add_receiver(receiver) }
-            _ => panic!("Cannot add a joint input to a node which was not declared as a joint with joint_begin")
-        }
-    }
-    
-    pub fn joint_lock<F: Sharable>(mut self, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
-        match &mut self.input {
-            NodeReceiver::MI(_) => {
-                let (sender, receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
-                let mut successor: PipelineNode<O, F> = PipelineNode::new();
+        joint_node.input = NodeReceiver::DMI(Demultiplexer::new(channel_selector, pipeline.timeout, pipeline.retries));
 
-                self.output = NodeSender::SO(SingleSender::new(sender));
-                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), pipeline.timeout, pipeline.retries));
-
-                let new_thread = PipelineThread::new(step, self);
-                pipeline.nodes.push(new_thread);
-
-                successor
-            }
-            _ => panic!("To joint lock a node it must be declared as a joint")
-        }
-    }
-    
-    pub fn joint_add_lazy<F: Sharable>(&mut self, pipeline: &RadioPipeline) -> PipelineNode<F, I> {
-        // creates an empty placeholder node for a joint that can be made concrete later to facilitate feedback architecture
-        let (sender, receiver) = mpsc::sync_channel::<I>(pipeline.backpressure_val);
-        match &mut self.input {
-            NodeReceiver::MI(node_receiver) => node_receiver.add_receiver(WrappedReceiver::new(receiver).set_startup_flag()),
-            _ => panic!("Cannot add lazy feedback node to a node which was not declared as a joint with joint_begin")
-        };
-        
-        let mut lazy_node = PipelineNode::new();
-        lazy_node.output = NodeSender::SO(SingleSender::new(sender));
-        
-        lazy_node
-    }
-    
-    // pub fn joint_link_lazy<F: Sharable>(mut self, id: String, step: impl PipelineStep<I, O>, mut lazy_node: PipelineNode<O, F>, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
-    //     // takes the final node of a branch and attaches it to a lazy node's input. You must still assign the lazy node input with joint_lazy_finalize
-    //     let (sender, receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
-    // 
-    //     self.set_id(id);
-    // 
-    //     self.output = NodeSender::SO(sender);
-    //     lazy_node.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), pipeline.timeout, pipeline.retries));
-    // 
-    //     let new_thread = PipelineThread::new(step, self);
-    //     pipeline.nodes.push(new_thread);
-    //     
-    //     lazy_node
-    // }
-    // 
-    // pub fn joint_lazy_finalize(mut self, id: String, step: impl PipelineStep<I, O>, pipeline: &mut RadioPipeline) {
-    //     // takes the computation step for a lazy node to close the feedback loop and submit it to the thread pool
-    //     self.id = id;
-    //     let new_thread = PipelineThread::new(step, self);
-    //     pipeline.nodes.push(new_thread);
-    // }
-    
-    pub fn joint_link_lazy(mut self, id: String, step: impl PipelineStep<I, O>, source_node: PipelineNode<I, O>, pipeline: &mut RadioPipeline) {
-        // takes the final node of a branch and attaches it to a lazy node's input. You must still assign the lazy node input with joint_lazy_finalize
-        self.set_id(id);
-        
-        match source_node.input {
-            NodeReceiver::SI(receiver) => {
-                self.input = NodeReceiver::SI(receiver);
-                let new_thread = PipelineThread::new(step, self);
-                pipeline.nodes.push(new_thread);
-            }
-            _ => panic!("Feedback joint cannot handle multiple input previous node"),
-        }
+        JointBuilder { node: joint_node }
     }
 
     pub fn set_reassembler(mut self, reassemble_quantity: usize, pipeline: &mut RadioPipeline) -> Self {
@@ -329,17 +217,194 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
     }
 }
 
-pub fn joint_feedback_begin<I: Sharable, O: Sharable>(id: String, pipeline: &mut RadioPipeline) -> PipelineNode<I, O> {
+pub fn joint_begin<JI: Sharable, JO: Sharable>(id: String, pipeline: &mut RadioPipeline) -> JointBuilder<JI, JO> {
+    // create a node marked as a joint which can take multiple input receivers. used to join multiple sub branches together (eg adder or something)
+    let mut joint_node: PipelineNode<JI, JO> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy,  id: id };
+    joint_node.input = NodeReceiver::MI(MultichannelReceiver::new(pipeline.timeout, pipeline.retries));
+
+    JointBuilder { node: joint_node }
+}
+
+pub fn joint_feedback_begin<I: Sharable, O: Sharable>(id: String, pipeline: &mut RadioPipeline) -> JointBuilder<I, O> {
     // Since there is no convenient origin point for a joint used in feedback in the pattern, a standalone function is needed to support type inference
     let mut joint_node: PipelineNode<I, O> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy,  id: id };
     joint_node.input = NodeReceiver::MI(MultichannelReceiver::new(pipeline.timeout, pipeline.retries));
 
-    joint_node
+    JointBuilder { node: joint_node }
 }
 
 
-pub struct StandardNode {
-    
+pub struct SplitBuilder<I: Sharable, O: Sharable> {
+    node: PipelineNode<I, O>
+}
+impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
+    pub fn split_add<F: Sharable>(&mut self, branch_name: String, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
+        // equivalent of start_pipeline for a subbranch of a flow diagram. generates an entry in the split for the branch
+        // returns the head of the new branch which can be attached to like a normal linear pipeline
+        match &mut self.node.output {
+            NodeSender::MO(node_sender) => {
+                let (split_sender, split_receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
+                node_sender.add_sender(split_sender);
+
+                let (successor_sender, successor_receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
+
+                let dummy_receiver = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(split_receiver), pipeline.timeout,  pipeline.retries));
+                let dummy_attacher_node: PipelineNode<O, O> = PipelineNode { input: dummy_receiver, output: NodeSender::SO(SingleSender::new(successor_sender)), id: branch_name };
+
+                let mut successor: PipelineNode<O, F> = PipelineNode::new();
+
+                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(successor_receiver), pipeline.timeout, pipeline.retries));
+
+                let dummy_step = DummyStep {};
+                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node);
+                pipeline.nodes.push(new_thread);
+
+                return successor;
+            }
+            _ => panic!("To add a split branch you must declare a node as a splitter with split_begin!")
+        }
+    }
+
+    pub fn split_lock(self, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) {
+        // submit the split to the thread pool, preventing any more branches from being added and making it computable
+        let new_thread = PipelineThread::new(step, self.node);
+        pipeline.nodes.push(new_thread);
+    }
+}
+
+
+pub struct LazyNodeBuilder<I: Sharable, O: Sharable> {
+    node:  PipelineNode<I, O>
+}
+impl<I: Sharable, O: Sharable> LazyNodeBuilder<I, O> {
+    pub fn joint_link_lazy(mut self, id: String, step: impl PipelineStep<I, O>, source_node: PipelineNode<I, O>, pipeline: &mut RadioPipeline) {
+        // takes the final node of a branch and attaches it to a lazy node's input. You must still assign the lazy node input with joint_lazy_finalize
+        self.node.set_id(id);
+
+        match source_node.input {
+            NodeReceiver::SI(receiver) => {
+                self.node.input = NodeReceiver::SI(receiver);
+                let new_thread = PipelineThread::new(step, self.node);
+                pipeline.nodes.push(new_thread);
+            }
+            _ => panic!("Feedback joint cannot handle multiple input previous node"),
+        }
+    }
+}
+
+
+pub struct JointBuilder<I: Sharable, O: Sharable> {
+    node: PipelineNode<I, O>
+}
+impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
+    fn joint_add(&mut self, receiver: WrappedReceiver<I>) {
+        // attach an input to a joint 
+        match &mut self.node.input {
+            NodeReceiver::MI(node_receiver) => { node_receiver.add_receiver(receiver) }
+            _ => panic!("Cannot add a joint input to a node which was not declared as a joint with joint_begin")
+        }
+    }
+
+    pub fn joint_lock<F: Sharable>(mut self, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
+        match &mut self.node.input {
+            NodeReceiver::MI(_) => {
+                let (sender, receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
+                let mut successor: PipelineNode<O, F> = PipelineNode::new();
+
+                self.node.output = NodeSender::SO(SingleSender::new(sender));
+                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), pipeline.timeout, pipeline.retries));
+
+                let new_thread = PipelineThread::new(step, self.node);
+                pipeline.nodes.push(new_thread);
+
+                successor
+            }
+            _ => panic!("To joint lock a node it must be declared as a joint")
+        }
+    }
+
+    pub fn joint_add_lazy<F: Sharable>(&mut self, pipeline: &RadioPipeline) -> LazyNodeBuilder<F, I> {
+        // creates an empty placeholder node for a joint that can be made concrete later to facilitate feedback architecture
+        let (sender, receiver) = mpsc::sync_channel::<I>(pipeline.backpressure_val);
+        match &mut self.node.input {
+            NodeReceiver::MI(node_receiver) => node_receiver.add_receiver(WrappedReceiver::new(receiver).set_startup_flag()),
+            _ => panic!("Cannot add lazy feedback node to a node which was not declared as a joint with joint_begin")
+        };
+
+        let mut lazy_node = PipelineNode::new();
+        lazy_node.output = NodeSender::SO(SingleSender::new(sender));
+
+        LazyNodeBuilder { node: lazy_node }
+    }
+}
+
+pub struct MultiplexerBuilder<I: Sharable, O: Sharable> {
+    node: PipelineNode<I, O>
+}
+impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
+    pub fn multiplexer_add<F: Sharable>(&mut self, branch_name: String, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
+        // equivalent of start_pipeline for a subbranch of a flow diagram. generates an entry in the split for the branch
+        // returns the head of the new branch which can be attached to like a normal linear pipeline
+        match &mut self.node.output {
+            NodeSender::MUO(node_sender) => {
+                let (split_sender, split_receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
+                node_sender.add_sender(split_sender);
+
+                let (successor_sender, successor_receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
+
+                let dummy_receiver = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(split_receiver), pipeline.timeout,  pipeline.retries));
+                let dummy_attacher_node: PipelineNode<O, O> = PipelineNode { input: dummy_receiver, output: NodeSender::SO(SingleSender::new(successor_sender)), id: branch_name };
+
+                let mut successor: PipelineNode<O, F> = PipelineNode::new();
+
+                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(successor_receiver), pipeline.timeout, pipeline.retries));
+
+                let dummy_step = DummyStep {};
+                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node);
+                pipeline.nodes.push(new_thread);
+
+                return successor;
+            }
+            _ => panic!("To add a multiplexer branch you must declare it as a multiplexer with multiplexer_start")
+        }
+    }
+    pub fn multiplexer_lock(self, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) {
+        // submit the split to the thread pool, preventing any more branches from being added and making it computable
+        let new_thread = PipelineThread::new(step, self.node);
+        pipeline.nodes.push(new_thread);
+    }
+}
+
+
+pub struct DemultiplexerBuilder<I: Sharable, O: Sharable> {
+    node: PipelineNode<I, O>
+}
+impl<I: Sharable, O: Sharable> DemultiplexerBuilder<I, O> {
+    fn demultiplexer_add(&mut self, receiver: WrappedReceiver<I>) {
+        // attach an input to a joint 
+        match &mut self.node.input {
+            NodeReceiver::DMI(node_receiver) => { node_receiver.add_receiver(receiver) }
+            _ => panic!("Cannot add a demultiplexer input to a node which was not declared as a demultiplexer with demultiplexer_begin")
+        }
+    }
+
+    pub fn demultiplexer_lock<F: Sharable>(mut self, step: impl PipelineStep<I, O> + 'static, pipeline: &mut RadioPipeline) -> PipelineNode<O, F> {
+        match &mut self.node.input {
+            NodeReceiver::DMI(_) => {
+                let (sender, receiver) = mpsc::sync_channel::<O>(pipeline.backpressure_val);
+                let mut successor: PipelineNode<O, F> = PipelineNode::new();
+
+                self.node.output = NodeSender::SO(SingleSender::new(sender));
+                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), pipeline.timeout, pipeline.retries));
+
+                let new_thread = PipelineThread::new(step, self.node);
+                pipeline.nodes.push(new_thread);
+
+                successor
+            }
+            _ => panic!("To joint lock a node it must be declared as a joint")
+        }
+    }
 }
 
 
