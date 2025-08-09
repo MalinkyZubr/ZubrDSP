@@ -4,10 +4,12 @@ use std::sync::mpsc;
 use std::sync::mpsc::{RecvTimeoutError};
 use std::sync::Arc;
 use futures::future::Lazy;
+use log::Level;
 use crate::pipeline::pipeline::{ConstructingPipeline, ConstructionQueue, PipelineParameters};
 use super::pipeline_thread::PipelineThread;
 use super::pipeline_traits::{Sharable, Unit, HasID, Source, Sink};
 use super::pipeline_comms::{WrappedReceiver, NodeReceiver, NodeSender, MultichannelReceiver, MultichannelSender, ReceiveType, SingleReceiver, ODFormat, SingleSender, Reassembler, Multiplexer, Demultiplexer};
+use super::api::*;
 
 
 #[derive(Debug)]
@@ -42,6 +44,12 @@ pub trait PipelineStep<I: Sharable, O: Sharable> : Send + 'static {
     }
     fn run_MIMO(&mut self, input: Vec<I>) -> Result<ODFormat<O>, String> {
         Err("Multiple In Multiple Out Not Implemented".to_string())
+    }
+    fn run_DISO(&mut self) -> Result<ODFormat<O>, String> {
+        Err("Dummy in Not Implemented".to_string())
+    }
+    fn run_SIDO(&mut self, input: I) -> Result<ODFormat<O>, String> {
+        Err("Dummy out Not Implemented".to_string())
     }
 }
 
@@ -78,12 +86,19 @@ impl<I: Sharable, O: Sharable> HasID for PipelineNode<I, O> {
 
 impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> { // have separate builder structs for special components like branching and multiplexing to reduce complexity.
     fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
+        log_message(format!("StepID: {:?}, awaiting message", &self.id), Level::Debug);
         let received_result = self.input.receive();
         //println!("{}======={:?}", &self.id, &received_result);
         match received_result {
-            Err(err) => PipelineStepResult::RecvTimeoutError(err), // must have a way to handle if it is a dummy
+            Err(err) => {
+                let result = PipelineStepResult::RecvTimeoutError(err);
+                log_message(format!("StepID: {:?}, ReceiveError: {:?}", &self.id, &err), Level::Error);
+                result
+            }, // must have a way to handle if it is a dummy
             Ok(val) => {
-                self.route_computation(val, step)
+                log_message(format!("StepID: {:?}, Successful Receive", &self.id), Level::Debug);
+                let result = self.route_computation(val, step);
+                result
             }
         }
     }
@@ -101,10 +116,19 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
 
     fn compute_handler(&mut self, output_data: Result<ODFormat<O>, String>) -> PipelineStepResult {
         match output_data {
-            Err(err) => PipelineStepResult::ComputeError(err),
+            Err(err) => {
+                log_message(format!("StepID: {:?}, ComputeError: {:?}", &self.id, &err), Level::Error);
+                PipelineStepResult::ComputeError(err)
+            },
             Ok(extracted_data) => match self.output.send(extracted_data) {
-                Err(_) => PipelineStepResult::SendError,
-                Ok(_) => PipelineStepResult::Success
+                Err(_) => {
+                    log_message(format!("StepID: {:?}, SendError", &self.id), Level::Error);
+                    PipelineStepResult::SendError
+                },
+                Ok(_) => {
+                    log_message(format!("StepID: {:?}, SendSuccess", &self.id), Level::Debug);
+                    PipelineStepResult::Success
+                }
             }
         }
     }
@@ -117,6 +141,8 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
             (ReceiveType::Multichannel(t), NodeSender::MO(_)) => step.run_MIMO(t),
             (ReceiveType::Reassembled(t), NodeSender::SO(_) | NodeSender::MUO(_)) => step.run_REASO(t),
             (ReceiveType::Reassembled(t), NodeSender::MO(_)) => step.run_REAMO(t),
+            (ReceiveType::Dummy, NodeSender::SO(_)) => step.run_DISO(),
+            (ReceiveType::Single(t), NodeSender::Dummy) => step.run_SIDO(t),
             (_, _) => Err(String::from("Received bad message from pipeline step")),
         })
     }

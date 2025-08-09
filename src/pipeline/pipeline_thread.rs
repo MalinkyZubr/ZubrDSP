@@ -6,6 +6,7 @@ use std::sync::mpsc;
 use std::time::Instant;
 use super::pipeline_step::{PipelineStep, PipelineNode, CallableNode, PipelineStepResult};
 use super::pipeline_traits::{HasID, Sharable};
+use super::api::*;
 
 
 pub struct PipelineThread {
@@ -52,12 +53,12 @@ impl PipelineThread {
             self.id = node.get_id();
 
             self.pipeline_step_thread = Some(
-                thread::spawn(move || {
+                thread::spawn(move || { // refactor this so it isnt nonsense
                     let mut error_count = 0;
-                    while !kill_flag_clone.load(Ordering::Acquire) && error_count < 10 {
+                    while !kill_flag_clone.load(Ordering::Acquire) && error_count < 5 {
                         let _ = receiver.recv_timeout(std::time::Duration::from_millis(1000));
 
-                        while runflag_clone.load(Ordering::Acquire) && error_count < 10 { // more thoughtful error handling later
+                        while runflag_clone.load(Ordering::Acquire) && error_count < 5 { // more thoughtful error handling later
                             let start_time = Instant::now();
                             let return_code_received = node.call(&mut step);
 
@@ -102,9 +103,9 @@ impl PipelineThread {
 
                 _ = self.notify_channel.0.try_send(());
 
-                //println!("killing thread {}", self.id);
+                log_message(format!("Stopping thread: {}", self.id), Level::Debug);
                 _ = step_thread.join();
-                //println!("thread {} killed", self.id);
+                log_message(format!("Thread killed: {}", self.id), Level::Debug);
             },
             None => {
                 panic!("no thread is running!");

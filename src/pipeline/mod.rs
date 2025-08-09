@@ -11,5 +11,6 @@ mod valid_types;
 mod pipeline_traits;
 mod pipeline_comms;
 pub mod api;
+pub mod logging;
 //mod dummy;
 //mod curses;

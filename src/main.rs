@@ -3,6 +3,9 @@
 #![feature(let_chains)]
 
 
+use pipeline::logging::initialize_logger;
+
+
 mod pipeline;
 mod byte_line;
 mod dsp;
@@ -18,5 +21,6 @@ use ratatui::{
 use strum::IntoEnumIterator;
 
 fn main() -> Result<()> {
+    initialize_logger();
     Ok(())
 }

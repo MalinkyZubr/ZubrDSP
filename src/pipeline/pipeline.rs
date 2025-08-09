@@ -9,6 +9,7 @@ use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use crossbeam_queue::SegQueue;
+use super::api::*;
 
 
 pub type ConstructionQueue = Arc<SegQueue<PipelineThread>>;
@@ -64,6 +65,7 @@ pub struct ActivePipeline {
 }
 impl ActivePipeline {
     pub fn start(&mut self) {
+        log_message(format!("Starting active pipeline length: {}", self.nodes.len()), Level::Debug);
         //self.dummy_manager.start();
         for node in self.nodes.iter_mut() {
             node.start();
@@ -72,12 +74,14 @@ impl ActivePipeline {
     
     pub fn stop(&mut self) {
         //self.dummy_manager.stop();
+        log_message(format!("Stopping active pipeline length: {}", self.nodes.len()), Level::Debug);
         for node in self.nodes.iter_mut() {
             node.stop();
         }
     }
     
     pub fn kill(&mut self) {
+        log_message(format!("Killing active pipeline length: {}", self.nodes.len()), Level::Debug);
         for mut node in self.nodes.iter_mut() {
             node.kill();
         }
