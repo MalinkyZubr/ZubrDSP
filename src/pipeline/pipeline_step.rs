@@ -12,12 +12,13 @@ use super::pipeline_comms::{WrappedReceiver, NodeReceiver, NodeSender, Multichan
 use super::api::*;
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum PipelineStepResult {
     Success,
     SendError,
     RecvTimeoutError(RecvTimeoutError),
-    ComputeError(String)
+    ComputeError(String),
+    Carryover
 }
 
 // how can I make multiple input and output types more convenient?
@@ -166,7 +167,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         self.node.output = NodeSender::SO(SingleSender::new(sender));
         successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), self.parameters.timeout, self.parameters.retries));
 
-        let new_thread = PipelineThread::new(step, self.node);
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
         self.construction_queue.push(new_thread);
 
         NodeBuilder { node: successor, construction_queue: self.construction_queue, parameters: self.parameters }
@@ -179,7 +180,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
 
         self.node.output = NodeSender::Dummy;
 
-        let new_thread = PipelineThread::new(step, self.node);
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
         self.construction_queue.push(new_thread);
     }
 
@@ -197,7 +198,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let mut successor: PipelineNode<O, F> = PipelineNode::new();
         successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), pipeline.parameters.timeout, pipeline.parameters.retries));
 
-        let new_thread = PipelineThread::new(source_step, start_node);
+        let new_thread = PipelineThread::new(source_step, start_node, pipeline.parameters.clone());
         pipeline.get_nodes().push(new_thread);
 
         NodeBuilder { node: successor, parameters: pipeline.parameters.clone(), construction_queue: pipeline.get_nodes() }
@@ -293,7 +294,7 @@ impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(successor_receiver), self.parameters.timeout, self.parameters.retries));
 
                 let dummy_step = DummyStep {};
-                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node);
+                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone());
                 self.construction_queue.push(new_thread);
 
                 NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone() }
@@ -304,7 +305,7 @@ impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
 
     pub fn split_lock(self, step: impl PipelineStep<I, O> + 'static) {
         // submit the split to the thread pool, preventing any more branches from being added and making it computable
-        let new_thread = PipelineThread::new(step, self.node);
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
         self.construction_queue.push(new_thread);
     }
 }
@@ -323,7 +324,7 @@ impl<I: Sharable, O: Sharable> LazyNodeBuilder<I, O> {
         match source_node.node.input {
             NodeReceiver::SI(receiver) => {
                 self.node.input = NodeReceiver::SI(receiver);
-                let new_thread = PipelineThread::new(step, self.node);
+                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
                 self.construction_queue.push(new_thread);
             }
             _ => panic!("Feedback joint cannot handle multiple input previous node"),
@@ -355,7 +356,7 @@ impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
                 self.node.output = NodeSender::SO(SingleSender::new(sender));
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), self.parameters.timeout, self.parameters.retries));
 
-                let new_thread = PipelineThread::new(step, self.node);
+                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
                 self.construction_queue.push(new_thread);
 
                 NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone() }
@@ -403,7 +404,7 @@ impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(successor_receiver), self.parameters.timeout, self.parameters.retries));
 
                 let dummy_step = DummyStep {};
-                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node);
+                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone());
                 self.construction_queue.push(new_thread);
 
                 NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone() }
@@ -413,7 +414,7 @@ impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
     }
     pub fn multiplexer_lock(self, step: impl PipelineStep<I, O> + 'static) {
         // submit the split to the thread pool, preventing any more branches from being added and making it computable
-        let new_thread = PipelineThread::new(step, self.node);
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
         self.construction_queue.push(new_thread);
     }
 }
@@ -442,7 +443,7 @@ impl<I: Sharable, O: Sharable> DemultiplexerBuilder<I, O> {
                 self.node.output = NodeSender::SO(SingleSender::new(sender));
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), self.parameters.timeout, self.parameters.retries));
 
-                let new_thread = PipelineThread::new(step, self.node);
+                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
                 self.construction_queue.push(new_thread);
 
                 NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone() }

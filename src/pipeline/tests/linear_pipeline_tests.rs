@@ -44,7 +44,7 @@ mod node_tests {
         
         log_message("Staring linear pipeline construction".to_string(), Level::Debug);
         
-        let mut pipeline = ConstructingPipeline::new(3, 1000, 1);
+        let mut pipeline = ConstructingPipeline::new(3, 1000, 1, 2, 3, 1000);
         let input_pair = mpsc::sync_channel(1);
         let (output_sender, output_receiver) = mpsc::channel();
         // 
@@ -64,7 +64,7 @@ mod node_tests {
         
         log_message("Pipeline started execution".to_string(), Level::Debug);
         
-        sleep(std::time::Duration::from_millis(1000));
+        //sleep(std::time::Duration::from_millis(1000));
         
         input_pair.0.send(1).unwrap();
         let result = output_receiver.recv().unwrap();

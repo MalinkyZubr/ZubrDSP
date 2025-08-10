@@ -40,7 +40,7 @@ mod node_tests {
 
     #[test]
     fn test_branch_pipeline_assembly() {
-        let mut pipeline = ConstructingPipeline::new(3, 1000, 1);
+        let mut pipeline = ConstructingPipeline::new(3, 1000, 1, 2, 3, 1000);
 
         let input_pair = mpsc::sync_channel(1);
         let (output_sender, output_receiver) = mpsc::channel();

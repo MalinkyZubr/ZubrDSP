@@ -49,7 +49,7 @@ mod node_tests {
         
         // can y[n-1] (on the pipeline scale). Mathematically this either means true y[n-1] in the case of a scalar type, or between
         // y[n - 1], y[n - k] for a k-sized vector type 
-        let mut pipeline = ConstructingPipeline::new(3, 1000, 1);
+        let mut pipeline = ConstructingPipeline::new(3, 1000, 1, 2, 3, 1000);
 
         let input_pair = mpsc::sync_channel(1);
         let (output_sender, output_receiver) = mpsc::channel();

@@ -19,14 +19,20 @@ pub type ConstructionQueue = Arc<SegQueue<PipelineThread>>;
 pub struct PipelineParameters {
     pub retries: usize,
     pub timeout: u64,
+    pub max_infrastructure_errors: usize,
+    pub max_compute_errors: usize,
+    pub unchanged_state_time: u64,
     pub backpressure_val: usize
 }
 impl PipelineParameters {
-    pub fn new(retries: usize, timeout: u64, backpressure_val: usize) -> PipelineParameters {
+    pub fn new(retries: usize, timeout: u64, backpressure_val: usize, max_infrastructure_errors: usize, max_compute_errors: usize, unchanged_state_time: u64) -> PipelineParameters {
         Self {
             retries,
             timeout,
             backpressure_val,
+            max_compute_errors,
+            max_infrastructure_errors,
+            unchanged_state_time
         }
     }
 }
@@ -37,8 +43,8 @@ pub struct ConstructingPipeline {
     pub parameters: PipelineParameters
 }
 impl ConstructingPipeline {
-    pub fn new(retries: usize, timeout: u64, backpressure_val: usize) -> Self {
-        let parameters = PipelineParameters::new(retries, timeout, backpressure_val);
+    pub fn new(retries: usize, timeout: u64, backpressure_val: usize, max_infrastructure_errors: usize, max_compute_errors: usize, unchanged_state_time: u64) -> Self {
+        let parameters = PipelineParameters::new(retries, timeout, backpressure_val, max_infrastructure_errors, max_compute_errors, unchanged_state_time);
         Self {
             nodes: Arc::new(SegQueue::new()),
             parameters

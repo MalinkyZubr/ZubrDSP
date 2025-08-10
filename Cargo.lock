@@ -17,6 +17,7 @@ dependencies = [
  "futures",
  "log",
  "num",
+ "num_enum",
  "plotters",
  "rand",
  "ratatui",
