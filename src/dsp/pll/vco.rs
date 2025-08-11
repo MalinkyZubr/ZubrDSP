@@ -4,14 +4,18 @@ use std::f32::consts::PI;
 
 pub struct VCO {
     previous_phase_sum: f32,
+    constant_coefficient: f32
 }
 impl VCO {
+    pub fn new(constant_coefficient: f32) -> Self {
+        Self {previous_phase_sum: 0.0, constant_coefficient}
+    }
     pub fn process_input_vector(&mut self, input_vector: &mut Vec<f32>) {
         input_vector[0] = self.previous_phase_sum + input_vector[0];
         let mut sum_value = input_vector[0];
         
         for input_value in input_vector.iter_mut() {
-            sum_value = (sum_value + *input_value) % (2.0 * PI);
+            sum_value = (sum_value + (*input_value * self.constant_coefficient)) % (2.0 * PI);
             *input_value = sum_value;
         }
         
