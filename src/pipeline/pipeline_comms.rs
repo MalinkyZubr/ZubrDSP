@@ -2,10 +2,11 @@ use std::sync::mpsc::{Receiver, SyncSender, SendError, RecvTimeoutError};
 use std::time::Duration;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use strum::Display;
 use super::pipeline_traits::{Sharable, HasDefault};
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Display)]
 pub enum ReceiveType<T: Sharable> {
     /* 
     This is a very important enum!
@@ -20,6 +21,16 @@ pub enum ReceiveType<T: Sharable> {
     Reassembled(Vec<T>),
     Multichannel(Vec<T>),
     Dummy
+}
+impl<T: Sharable> ReceiveType<T> {
+    pub fn to_string(&self) -> &str {
+        match self {
+            Self::Single(_) => "Single",
+            Self::Reassembled(_) => "Reassembled",
+            Self::Multichannel(_) => "Multichannel",
+            Self::Dummy => "Dummy"
+        }
+    }
 }
 
 

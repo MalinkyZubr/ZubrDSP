@@ -1,8 +1,9 @@
 #[cfg(test)]
-mod feedback_tests {
+mod pipeline_tests {
     use std::sync::mpsc;
     use crate::pipeline::api::{ConstructingPipeline, ODFormat};
     use crate::pipeline::api::*;
+    use crate::pipeline::logging::initialize_logger;
     use crate::pipeline::pipeline_step::{joint_feedback_begin, PipelineNode, PipelineStep};
     use crate::pipeline::pipeline_traits::{Source, Sink};
     use crate::pipeline::pipeline_comms::{ReceiveType};
@@ -48,7 +49,8 @@ mod feedback_tests {
     impl Sink for Dummy3 {}
 
     #[test]
-    fn test_feedback_pipeline_assembly() { 
+    fn test_feedback_pipeline_assembly() {
+        initialize_logger();
         // oftentimes it will be easier to contain a feedback loop directly inside of the pipeline step rather than constructing one within the 
         // framework of several steps as shown below. Feedback internal to a step offers finer grained control, and doesnt lose any performance
         // however if you really want supreme super separation of concerns because you're a good engineer feel free to use this for macro scale feedback loops
@@ -61,21 +63,21 @@ mod feedback_tests {
         let input_pair = mpsc::sync_channel(1);
         let (output_sender, output_receiver) = mpsc::channel();
         
-        let mut feedback_joint = joint_feedback_begin("Test Feedback Joint".to_string(), &mut pipeline);
+        let mut feedback_joint = joint_feedback_begin("Test Feedback Joint", &mut pipeline);
 
-        NodeBuilder::start_pipeline(String::from("test_source"), Dummy1 {receiver: input_pair.1}, &mut pipeline)
-            .attach(String::from("step 1"), Dummy2 {})
+        NodeBuilder::start_pipeline("test_source", Dummy1 {receiver: input_pair.1}, &mut pipeline)
+            .attach("step 1", Dummy2 {})
             .branch_end(&mut feedback_joint);
         
         let mut lazy_node = feedback_joint.joint_add_lazy();
         
         let mut test_split = feedback_joint.joint_lock(Dummy2 {})
-            .split_begin("Test Split".to_string());
+            .split_begin("Test Split");
         
-        test_split.split_add("Exit Branch".to_string())
-            .cap_pipeline("Exit".to_string(), Dummy3 {sender: output_sender});
+        test_split.split_add("Exit Branch")
+            .cap_pipeline("Exit", Dummy3 {sender: output_sender});
         
-        lazy_node.joint_link_lazy("Feedback Node".to_string(), Dummy2 {}, test_split.split_add("Feedback Arm".to_string()));
+        lazy_node.joint_link_lazy("Feedback Node", Dummy2 {}, test_split.split_add("Feedback Arm"));
         
         test_split.split_lock(Dummy2 {});
 

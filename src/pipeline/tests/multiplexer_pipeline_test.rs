@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod multiplexed_tests {
+mod pipeline_tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::mpsc;
     use std::thread::sleep;
@@ -61,23 +61,23 @@ mod multiplexed_tests {
         
         let multiplexer_selector = Arc::new(AtomicUsize::new(0));
 
-        let mut multiplexer_builder = NodeBuilder::start_pipeline("Pipeline Origin".to_string(), Dummy1 { receiver: input_pair.1 }, &pipeline)
-            .mutltiplexer_begin("Test Multiplexer".to_string(), multiplexer_selector.clone());
+        let mut multiplexer_builder = NodeBuilder::start_pipeline("Pipeline Origin", Dummy1 { receiver: input_pair.1 }, &pipeline)
+            .mutltiplexer_begin("Test Multiplexer", multiplexer_selector.clone());
 
-        let mut demultiplexer = demultiplexer_begin("Demultiplexer".to_string(), multiplexer_selector.clone(), &pipeline);
+        let mut demultiplexer = demultiplexer_begin("Demultiplexer", multiplexer_selector.clone(), &pipeline);
         
-        multiplexer_builder.multiplexer_add("Branch 1".to_string())
-            .attach("branch 1 operator".to_string(), Dummy2a {})
+        multiplexer_builder.multiplexer_add("Branch 1")
+            .attach("branch 1 operator", Dummy2a {})
             .multiplex_branch_end(&mut demultiplexer);
 
-        multiplexer_builder.multiplexer_add("Branch 2".to_string())
-            .attach("branch 2 operator".to_string(), Dummy2b {})
+        multiplexer_builder.multiplexer_add("Branch 2")
+            .attach("branch 2 operator", Dummy2b {})
             .multiplex_branch_end(&mut demultiplexer);
         
         multiplexer_builder.multiplexer_lock(Dummy2a {});
         
         demultiplexer.demultiplexer_lock(Dummy2a {})
-            .cap_pipeline("Multiplexed sink".to_string(), Dummy3 { sender: output_sender});
+            .cap_pipeline("Multiplexed sink", Dummy3 { sender: output_sender});
         
         
         log_message("Pipeline Path Designed".to_string(), Level::Debug);

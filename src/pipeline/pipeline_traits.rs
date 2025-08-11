@@ -23,5 +23,5 @@ impl Unit for () {
 
 pub trait HasID {
     fn get_id(&self) -> String;
-    fn set_id(&mut self, id: String);
+    fn set_id(&mut self, id: &str);
 }

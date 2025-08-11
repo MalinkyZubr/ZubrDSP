@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod linear_tests {
+mod pipeline_tests {
     use std::sync::mpsc;
     use std::thread::sleep;
     use crate::pipeline::api::*;
@@ -58,9 +58,9 @@ mod linear_tests {
         // 
         log_message("input output mpsc communicators created".to_string(), Level::Debug);
         
-        NodeBuilder::start_pipeline(String::from("test_source"), Dummy1 { receiver: input_pair.1 }, &pipeline)
-            .attach(String::from("step 1"), Dummy2 {})
-            .cap_pipeline(String::from("step 2"), Dummy3 { sender: output_sender });
+        NodeBuilder::start_pipeline("test_source", Dummy1 { receiver: input_pair.1 }, &pipeline)
+            .attach("step 1", Dummy2 {})
+            .cap_pipeline("test_sink", Dummy3 { sender: output_sender });
         
         log_message("Pipeline Path Designed".to_string(), Level::Debug);
         

@@ -13,15 +13,6 @@ use super::pipeline_traits::{HasID, Sharable};
 use super::api::*;
 
 
-#[repr(u8)]
-#[derive(PartialEq, Debug, TryFromPrimitive, strum::Display, Clone)]
-pub enum ThreadStateSpace {
-    RUNNING = 0,
-    PAUSED = 1,
-    KILLED = 2
-}
-
-
 struct ThreadErrorCounter {
     max_infrastructure_errors: usize,
     infrastructure_errors_received: usize, // kill when reach limit
@@ -43,14 +34,16 @@ impl ThreadErrorCounter {
         self.compute_errors_received = 0;
     }
     pub fn compute_error_lim_check(&mut self, id: &String) -> bool {
-        if self.compute_errors_received > self.max_compute_errors {
+        if self.max_compute_errors == 0 { false }
+        else if self.compute_errors_received > self.max_compute_errors {
             log_message(format!("ThreadID: {} max allowed compute errors received", id), Level::Warn);
             true
         }
         else { false }
     }
     pub fn infrastructure_error_lim_check(&mut self, id: &String) -> bool{
-        if self.infrastructure_errors_received > self.max_infrastructure_errors {
+        if self.max_infrastructure_errors == 0 { false }
+        else if self.infrastructure_errors_received > self.max_infrastructure_errors {
             log_message(format!("ThreadID: {} max allowed infrastructure errors received", id), Level::Error);
             true
         }
@@ -62,12 +55,13 @@ struct ThreadStateMachine {
     state: ThreadStateSpace,
     error_counter: ThreadErrorCounter,
     no_change_timer: u64,
+    state_change_messenger: mpsc::Sender<ThreadStateSpace>,
     id: String
 }
 impl ThreadStateMachine {
-    pub fn new(parameters: &PipelineParameters, id: String) -> Self {
+    pub fn new(parameters: &PipelineParameters, id: String, messenger: mpsc::Sender<ThreadStateSpace>) -> Self {
         let error_counter = ThreadErrorCounter::new(parameters.max_infrastructure_errors, parameters.max_compute_errors);
-        Self { error_counter, state: ThreadStateSpace::PAUSED, id, no_change_timer: parameters.unchanged_state_time }
+        Self { error_counter, state: ThreadStateSpace::PAUSED, id, no_change_timer: parameters.unchanged_state_time, state_change_messenger: messenger }
     }
     fn state_transition(&mut self, requested_state: ThreadStateSpace, mut previous_output: PipelineStepResult) {
         if requested_state == ThreadStateSpace::KILLED {
@@ -88,7 +82,7 @@ impl ThreadStateMachine {
             PipelineStepResult::SendError => {
                 self.error_counter.infrastructure_error();
                 log_message(format!("ThreadID: {} send error received", &self.id), Level::Warn);
-                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state() }
+                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state_upstream() }
                 true
             },
             PipelineStepResult::RecvTimeoutError(err) => {
@@ -97,13 +91,13 @@ impl ThreadStateMachine {
                     RecvTimeoutError::Timeout => log_message(format!("ThreadID: {} receive timeout received", &self.id), Level::Warn),
                     RecvTimeoutError::Disconnected => log_message(format!("ThreadID: {} receiver disconnected received", &self.id), Level::Warn)
                 }
-                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state() }
+                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state_upstream() }
                 true
             }
             PipelineStepResult::ComputeError(message) => {
                 self.error_counter.compute_error();
                 log_message(format!("ThreadID: {} compute error {}, pausing", &self.id, message), Level::Warn);
-                if self.error_counter.compute_error_lim_check(&self.id) { self.set_pause_state() };
+                if self.error_counter.compute_error_lim_check(&self.id) { self.set_pause_state_upstream() };
                 true
             }
             PipelineStepResult::Success => { self.error_counter.success(); false }
@@ -114,9 +108,25 @@ impl ThreadStateMachine {
         self.state = ThreadStateSpace::KILLED;
         log_message(format!("ThreadID: {} state set killed", &self.id), Level::Info);
     }
+    fn set_kill_state_upstream(&mut self) {
+        self.set_kill_state();
+        log_message(format!("Thread ID: {}, sending kill upstream", &self.id), Level::Debug);
+        match self.state_change_messenger.send(ThreadStateSpace::KILLED) {
+            Err(error) => panic!("Critical error, cannot reach management thread!"),
+            Ok(_) => log_message(format!("Thread ID: {}, sent kill upstream", &self.id), Level::Debug)
+        }
+    }
     fn set_pause_state(&mut self) {
         self.state = ThreadStateSpace::PAUSED;
         log_message(format!("ThreadID: {} state set paused", &self.id), Level::Info);
+    }
+    fn set_pause_state_upstream(&mut self) {
+        self.set_pause_state();
+        log_message(format!("Thread ID: {}, sending pause upstream", &self.id), Level::Debug);
+        match self.state_change_messenger.send(ThreadStateSpace::PAUSED) {
+            Err(error) => panic!("Critical error, cannot reach management thread!"),
+            Ok(_) => log_message(format!("Thread ID: {}, sent pause upstream", &self.id), Level::Debug)
+        }
     }
     fn set_running_state(&mut self) {
         self.state = ThreadStateSpace::RUNNING;
@@ -152,12 +162,15 @@ impl ThreadStateMachine {
     fn call<I: Sharable, O: Sharable>(&mut self, requested_state: ThreadStateSpace, previous_result: PipelineStepResult, node: &mut impl CallableNode<I, O>, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
         self.state_transition(requested_state, previous_result);
 
-        log_message(format!("ThreadID: {} call start", &self.id), Level::Debug);
         let result = match self.state {
-            ThreadStateSpace::RUNNING => node.call(step),
+            ThreadStateSpace::RUNNING => {
+                log_message(format!("ThreadID: {} call start", &self.id), Level::Debug);
+                let res = node.call(step);
+                log_message(format!("ThreadID: {} call done", &self.id), Level::Debug);
+                res
+            },
             _ => PipelineStepResult::Carryover
         };
-        log_message(format!("ThreadID: {} call done", &self.id), Level::Debug);
         result
     }
 }
@@ -168,12 +181,13 @@ pub struct PipelineThread {
     execution_time: Arc<AtomicU64>,
     pipeline_step_thread: Option<JoinHandle<()>>,
     return_code: Arc<RwLock<PipelineStepResult>>,
+    state_sender: Option<mpsc::Sender<ThreadStateSpace>>,
     pub id: String
 }
 
 impl PipelineThread {
     pub fn new<I: Sharable, O: Sharable>
-    (step: impl PipelineStep<I, O> + 'static, node: impl CallableNode<I, O> + 'static + HasID, parameters: PipelineParameters, state: Arc<AtomicU8>) -> PipelineThread { // requires node to be borrowed as static?
+    (step: impl PipelineStep<I, O> + 'static, node: impl CallableNode<I, O> + 'static + HasID, parameters: PipelineParameters, state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>)) -> PipelineThread { // requires node to be borrowed as static?
         let execution_time = Arc::new(AtomicU64::new(0));
 
         let mut thread = PipelineThread {
@@ -181,7 +195,8 @@ impl PipelineThread {
             pipeline_step_thread: None,
             return_code: Arc::new(RwLock::new(PipelineStepResult::Success)),
             id: String::from("NoID"),
-            requested_state: state // all threads start as paused initially
+            requested_state: state.0, // all threads start as paused initially
+            state_sender: Some(state.1)
         };
         
         thread.instantiate_thread(step, node, parameters);
@@ -194,29 +209,34 @@ impl PipelineThread {
         let execution_clone = self.execution_time.clone();
         let return_code_clone = self.return_code.clone();
         let state_receiver = self.requested_state.clone();
+        let state_sender = self.state_sender.take();
+
+        let state_sender = match state_sender {
+            None => panic!("Cannot start step thread without attaching the managerial thread broadcaster"),
+            Some(sender) => sender
+        };
+
         self.id = node.get_id();
 
-        self.pipeline_step_thread = Some(
-            thread::spawn(move || { // refactor this so it isnt nonsense
-                let mut state_machine = ThreadStateMachine::new(&parameters, node.get_id());
-                let mut previous_result = PipelineStepResult::Carryover;
-                let kill_comp = ThreadStateSpace::KILLED;
-                
-                while state_machine.state != kill_comp {
-                    let requested_state: ThreadStateSpace = ThreadStateSpace::try_from(state_receiver.load(Ordering::Acquire)).unwrap();
-                    log_message(format!("ThreadID: {} requested state {}, current state {}", node.get_id(), requested_state, state_machine.state), Level::Info);
-                    let start_time = Instant::now();
-                    previous_result = state_machine.call(requested_state, previous_result, &mut node, &mut step);
-                    // how can get the pause to propogate back to the pipeline?
-                    execution_clone.store(start_time.elapsed().as_secs(), Ordering::Release);
-                    
-                    if previous_result != PipelineStepResult::Carryover {
-                        let mut write_guard = return_code_clone.write().unwrap();
-                        *write_guard = previous_result.clone();
-                    }
+        self.pipeline_step_thread = Some(thread::spawn(move || { // refactor this so it isnt nonsense
+            let mut state_machine = ThreadStateMachine::new(&parameters, node.get_id(), state_sender);
+            let mut previous_result = PipelineStepResult::Carryover;
+            let kill_comp = ThreadStateSpace::KILLED;
+
+            while state_machine.state != kill_comp {
+                let requested_state: ThreadStateSpace = ThreadStateSpace::try_from(state_receiver.load(Ordering::Acquire)).unwrap();
+                log_message(format!("ThreadID: {} requested state {}, current state {}", node.get_id(), requested_state, state_machine.state), Level::Info);
+                let start_time = Instant::now();
+                previous_result = state_machine.call(requested_state, previous_result, &mut node, &mut step);
+
+                execution_clone.store(start_time.elapsed().as_secs(), Ordering::Release);
+
+                if previous_result != PipelineStepResult::Carryover {
+                    let mut write_guard = return_code_clone.write().unwrap();
+                    *write_guard = previous_result.clone();
                 }
-                log_message(format!("ThreadID: {} state machine end of action loop", node.get_id()), Level::Info);
-            })
+            }
+            log_message(format!("ThreadID: {} state machine end of action loop", node.get_id()), Level::Info); })
         );
     }
     
