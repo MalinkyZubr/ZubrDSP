@@ -73,12 +73,13 @@ impl<T: Sharable + HasDefault> WrappedReceiver<T> {
         self.feedback_startup_flag = true;
         self
     }
-    fn result_handler(&self, result: &mut Result<T, RecvTimeoutError>, success_flag: &mut bool, retry_num: &mut usize) {
+    fn result_handler(&self, result: &mut Result<T, RecvTimeoutError>, retry_num: &mut usize, retries: usize) -> bool {
         match result {
             Err(err) => {
-                match err { RecvTimeoutError::Timeout => *retry_num += 1, _ => *success_flag = false}
+                match err { RecvTimeoutError::Timeout => *retry_num += 1, _ => *retry_num = retries};
+                false
             },
-            Ok(_) => { *success_flag = true; }
+            Ok(_) => true
         }
     }
     pub fn recv(&mut self, timeout: u64, retries: usize) -> Result<T, RecvTimeoutError> {
@@ -86,11 +87,12 @@ impl<T: Sharable + HasDefault> WrappedReceiver<T> {
         let mut success_flag = false;
         
         let mut result = Err(RecvTimeoutError::Timeout);
+        let mut success_flag = false;
 
-        while !success_flag && retry_num < retries {
+        while retry_num < retries && !success_flag {
             result = self.receiver.recv_timeout(Duration::from_millis(timeout));
 
-            self.result_handler(&mut result, &mut success_flag, &mut retry_num);
+            success_flag = self.result_handler(&mut result, &mut retry_num, retries);
         };
         if self.feedback_startup_flag {
             self.feedback_startup_flag = false;

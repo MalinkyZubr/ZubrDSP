@@ -1,8 +1,9 @@
 #[cfg(test)]
-mod node_tests {
+mod split_tests {
     use std::sync::mpsc;
     use crate::pipeline::api::ConstructingPipeline;
     use crate::pipeline::api::*;
+    use crate::pipeline::logging::initialize_logger;
     use crate::pipeline::pipeline_comms::{ReceiveType, ODFormat};
 
 
@@ -10,9 +11,11 @@ mod node_tests {
         receiver: mpsc::Receiver<u32>
     }
     impl PipelineStep<(), u32> for Dummy1 {
-        fn run_SISO(&mut self, input: ()) -> Result<ODFormat<u32>, String> {
-            let real_input = self.receiver.recv_timeout(std::time::Duration::from_millis(2000)).unwrap_or(0);
-            Ok(ODFormat::Standard(real_input + 1))
+        fn run_DISO(&mut self) -> Result<ODFormat<u32>, String> {
+            match self.receiver.recv_timeout(std::time::Duration::from_millis(2000)) {
+                Ok(val) => Ok(ODFormat::Standard(val + 1)),
+                Err(_) => Err("Timeout error".to_string())
+            }
         }
     }
     impl Source for Dummy1 {}
@@ -22,8 +25,13 @@ mod node_tests {
         fn run_SISO(&mut self, input: u32) -> Result<ODFormat<u32>, String> {
             Ok(ODFormat::Standard(input + 1))
         }
+        
         fn run_MISO(&mut self, input: Vec<u32>) -> Result<ODFormat<u32>, String> {
             Ok(ODFormat::Standard(input.iter().sum()))
+        }
+        
+        fn run_SIMO(&mut self, input: u32) -> Result<ODFormat<u32>, String> {
+            Ok(ODFormat::Standard(input + 1))
         }
     }
 
@@ -31,7 +39,7 @@ mod node_tests {
         sender: mpsc::Sender<u32>,
     }
     impl PipelineStep<u32, ()> for Dummy3 {
-        fn run_SISO(&mut self, input: u32) -> Result<ODFormat<()>, String> {
+        fn run_SIDO(&mut self, input: u32) -> Result<ODFormat<()>, String> {
             self.sender.send(input).unwrap();
             Ok(ODFormat::Standard(()))
         }
@@ -40,6 +48,8 @@ mod node_tests {
 
     #[test]
     fn test_branch_pipeline_assembly() {
+        initialize_logger();
+        
         let mut pipeline = ConstructingPipeline::new(3, 1000, 1, 2, 3, 1000);
 
         let input_pair = mpsc::sync_channel(1);
@@ -53,11 +63,11 @@ mod node_tests {
         split.split_add("Test Branch 1".to_string())
             .attach("branch_1 node 1".to_string(), Dummy2 {})
             .attach("branch_1 node 2".to_string(), Dummy2 {})
-            .branch_end("branch_1 node 3 end".to_string(), &mut test_joint);
+            .branch_end(&mut test_joint);
         
         split.split_add("Test Branch 2".to_string())
             .attach("branch_2 node 1".to_string(), Dummy2 {})
-            .branch_end("branch_2 node 2 end".to_string(), &mut test_joint);
+            .branch_end(&mut test_joint);
         
         split.split_lock(Dummy2 {});
         

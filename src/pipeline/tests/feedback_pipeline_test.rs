@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod node_tests {
+mod feedback_tests {
     use std::sync::mpsc;
     use crate::pipeline::api::{ConstructingPipeline, ODFormat};
     use crate::pipeline::api::*;
@@ -12,9 +12,11 @@ mod node_tests {
         receiver: mpsc::Receiver<u32>
     }
     impl PipelineStep<(), u32> for Dummy1 {
-        fn run_SISO(&mut self, input: ()) -> Result<ODFormat<u32>, String> {
-            let real_input = self.receiver.recv_timeout(std::time::Duration::from_millis(2000)).unwrap_or(0);
-            Ok(ODFormat::Standard(real_input + 1))
+        fn run_DISO(&mut self) -> Result<ODFormat<u32>, String> {
+            match self.receiver.recv_timeout(std::time::Duration::from_millis(2000)) {
+                Ok(val) => Ok(ODFormat::Standard(val + 1)),
+                Err(_) => Err("Timeout error".to_string())
+            }
         }
     }
     impl Source for Dummy1 {}
@@ -24,8 +26,13 @@ mod node_tests {
         fn run_SISO(&mut self, input: u32) -> Result<ODFormat<u32>, String> {
             Ok(ODFormat::Standard(input + 1))
         }
+
         fn run_MISO(&mut self, input: Vec<u32>) -> Result<ODFormat<u32>, String> {
             Ok(ODFormat::Standard(input.iter().sum()))
+        }
+
+        fn run_SIMO(&mut self, input: u32) -> Result<ODFormat<u32>, String> {
+            Ok(ODFormat::Standard(input + 1))
         }
     }
 
@@ -33,7 +40,7 @@ mod node_tests {
         sender: mpsc::Sender<u32>,
     }
     impl PipelineStep<u32, ()> for Dummy3 {
-        fn run_SISO(&mut self, input: u32) -> Result<ODFormat<()>, String> {
+        fn run_SIDO(&mut self, input: u32) -> Result<ODFormat<()>, String> {
             self.sender.send(input).unwrap();
             Ok(ODFormat::Standard(()))
         }
@@ -58,7 +65,7 @@ mod node_tests {
 
         NodeBuilder::start_pipeline(String::from("test_source"), Dummy1 {receiver: input_pair.1}, &mut pipeline)
             .attach(String::from("step 1"), Dummy2 {})
-            .branch_end("Test input branch end".to_string(), &mut feedback_joint);
+            .branch_end(&mut feedback_joint);
         
         let mut lazy_node = feedback_joint.joint_add_lazy();
         

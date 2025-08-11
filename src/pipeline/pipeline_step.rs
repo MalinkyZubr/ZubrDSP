@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize};
 use std::sync::mpsc;
 use std::sync::mpsc::{RecvTimeoutError};
 use std::sync::Arc;
@@ -29,28 +29,28 @@ pub enum PipelineStepResult {
  */
 pub trait PipelineStep<I: Sharable, O: Sharable> : Send + 'static {
     fn run_SISO(&mut self, input: I) -> Result<ODFormat<O>, String> {
-        Err("Single in Single Out Not Implemented".to_string())
+        panic!("Single in Single Out Not Implemented")
     }
     fn run_REASO(&mut self, input: Vec<I>) -> Result<ODFormat<O>, String> {
-        Err("Series In Single Out Not Implemented".to_string())
+        panic!("Series In Single Out Not Implemented")
     }
     fn run_MISO(&mut self, input: Vec<I>) -> Result<ODFormat<O>, String> {
-        Err("Multiple In Single Out Not Implemented".to_string())
+        panic!("Multiple In Single Out Not Implemented")
     }
     fn run_SIMO(&mut self, input: I) -> Result<ODFormat<O>, String> {
-        Err("Single In Multiple Out Not Implemented".to_string())
+        panic!("Single In Multiple Out Not Implemented")
     }
     fn run_REAMO(&mut self, input: Vec<I>) -> Result<ODFormat<O>, String> {
-        Err("Series In Multiple Out Not Implemented".to_string())
+        panic!("Series In Multiple Out Not Implemented")
     }
     fn run_MIMO(&mut self, input: Vec<I>) -> Result<ODFormat<O>, String> {
-        Err("Multiple In Multiple Out Not Implemented".to_string())
+        panic!("Multiple In Multiple Out Not Implemented")
     }
     fn run_DISO(&mut self) -> Result<ODFormat<O>, String> {
-        Err("Dummy in Not Implemented".to_string())
+        panic!("Dummy in Not Implemented")
     }
     fn run_SIDO(&mut self, input: I) -> Result<ODFormat<O>, String> {
-        Err("Dummy out Not Implemented".to_string())
+        panic!("Dummy out Not Implemented")
     }
 }
 
@@ -87,17 +87,13 @@ impl<I: Sharable, O: Sharable> HasID for PipelineNode<I, O> {
 
 impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> { // have separate builder structs for special components like branching and multiplexing to reduce complexity.
     fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
-        log_message(format!("StepID: {:?}, awaiting message", &self.id), Level::Debug);
         let received_result = self.input.receive();
-        //println!("{}======={:?}", &self.id, &received_result);
         match received_result {
             Err(err) => {
                 let result = PipelineStepResult::RecvTimeoutError(err);
-                log_message(format!("StepID: {:?}, ReceiveError: {:?}", &self.id, &err), Level::Error);
                 result
             }, // must have a way to handle if it is a dummy
             Ok(val) => {
-                log_message(format!("StepID: {:?}, Successful Receive", &self.id), Level::Debug);
                 let result = self.route_computation(val, step);
                 result
             }
@@ -117,19 +113,10 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
 
     fn compute_handler(&mut self, output_data: Result<ODFormat<O>, String>) -> PipelineStepResult {
         match output_data {
-            Err(err) => {
-                log_message(format!("StepID: {:?}, ComputeError: {:?}", &self.id, &err), Level::Error);
-                PipelineStepResult::ComputeError(err)
-            },
+            Err(err) => PipelineStepResult::ComputeError(err),
             Ok(extracted_data) => match self.output.send(extracted_data) {
-                Err(_) => {
-                    log_message(format!("StepID: {:?}, SendError", &self.id), Level::Error);
-                    PipelineStepResult::SendError
-                },
-                Ok(_) => {
-                    log_message(format!("StepID: {:?}, SendSuccess", &self.id), Level::Debug);
-                    PipelineStepResult::Success
-                }
+                Err(_) => PipelineStepResult::SendError,
+                Ok(_) => PipelineStepResult::Success
             }
         }
     }
@@ -154,6 +141,7 @@ pub struct NodeBuilder<I: Sharable, O: Sharable> {
     node: PipelineNode<I, O>,
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
+    state: Arc<AtomicU8>,
 }
 impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
     pub fn attach<F: Sharable>(mut self, id: String, step: impl PipelineStep<I, O> + 'static) -> NodeBuilder<O, F> {
@@ -167,10 +155,10 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         self.node.output = NodeSender::SO(SingleSender::new(sender));
         successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), self.parameters.timeout, self.parameters.retries));
 
-        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
         self.construction_queue.push(new_thread);
 
-        NodeBuilder { node: successor, construction_queue: self.construction_queue, parameters: self.parameters }
+        NodeBuilder { node: successor, construction_queue: self.construction_queue, parameters: self.parameters, state: self.state }
     }
 
     pub fn cap_pipeline(mut self, id: String, step: impl PipelineStep<I, O> + 'static + Sink)
@@ -180,7 +168,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
 
         self.node.output = NodeSender::Dummy;
 
-        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state);
         self.construction_queue.push(new_thread);
     }
 
@@ -198,10 +186,10 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let mut successor: PipelineNode<O, F> = PipelineNode::new();
         successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), pipeline.parameters.timeout, pipeline.parameters.retries));
 
-        let new_thread = PipelineThread::new(source_step, start_node, pipeline.parameters.clone());
+        let new_thread = PipelineThread::new(source_step, start_node, pipeline.parameters.clone(), pipeline.state.clone());
         pipeline.get_nodes().push(new_thread);
 
-        NodeBuilder { node: successor, parameters: pipeline.parameters.clone(), construction_queue: pipeline.get_nodes() }
+        NodeBuilder { node: successor, parameters: pipeline.parameters.clone(), construction_queue: pipeline.get_nodes(), state: pipeline.state.clone() }
     }
 
     pub fn split_begin(mut self, id: String) -> SplitBuilder<I, O> {
@@ -211,7 +199,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let sender: MultichannelSender<O> = MultichannelSender::new();
         self.node.output = NodeSender::MO(sender);
 
-        SplitBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue }
+        SplitBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state.clone() }
     }
 
     pub fn mutltiplexer_begin(mut self, id: String, channel_selector: Arc<AtomicUsize>) -> MultiplexerBuilder<I, O> {
@@ -219,15 +207,21 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let sender: Multiplexer<O> = Multiplexer::new(channel_selector);
         self.node.output = NodeSender::MUO(sender);
 
-        MultiplexerBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue }
+        MultiplexerBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state }
     }
 
-    pub fn branch_end(mut self, id: String, joint_builder: &mut JointBuilder<I, O>) {
-        self.node.set_id(id);
-
+    pub fn branch_end(mut self, joint_builder: &mut JointBuilder<I, O>) {
         match self.node.input {
             NodeReceiver::SI(receiver) => joint_builder.joint_add(receiver.extract_receiver()),
             NodeReceiver::Dummy => panic!("Cannot end branch with Dummy"),
+            _ => panic!("Must end branch with single. This should be automatic behavior")
+        }
+    }
+    
+    pub fn multiplex_branch_end(mut self, demultiplexer_builder: &mut DemultiplexerBuilder<I, O>) {
+        match self.node.input {
+            NodeReceiver::SI(receiver) => demultiplexer_builder.demultiplexer_add(receiver.extract_receiver()),
+            NodeReceiver::Dummy => panic!("Cannot end multiplexed branch with Dummy"),
             _ => panic!("Must end branch with single. This should be automatic behavior")
         }
     }
@@ -250,7 +244,7 @@ pub fn demultiplexer_begin<JI: Sharable, JO: Sharable>(id: String, channel_selec
     let mut demultiplexer_node: PipelineNode<JI, JO> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy,  id: id };
     demultiplexer_node.input = NodeReceiver::DMI(Demultiplexer::new(channel_selector, pipeline.parameters.timeout, pipeline.parameters.retries));
 
-    DemultiplexerBuilder { node: demultiplexer_node, parameters: pipeline.parameters.clone(), construction_queue: pipeline.get_nodes() }
+    DemultiplexerBuilder { node: demultiplexer_node, parameters: pipeline.parameters.clone(), construction_queue: pipeline.get_nodes(), state: pipeline.state.clone() }
 }
 
 pub fn joint_begin<JI: Sharable, JO: Sharable>(id: String, pipeline: &ConstructingPipeline) -> JointBuilder<JI, JO> {
@@ -258,7 +252,7 @@ pub fn joint_begin<JI: Sharable, JO: Sharable>(id: String, pipeline: &Constructi
     let mut joint_node: PipelineNode<JI, JO> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy, id: id };
     joint_node.input = NodeReceiver::MI(MultichannelReceiver::new(pipeline.parameters.timeout, pipeline.parameters.retries));
 
-    JointBuilder { node: joint_node, parameters: pipeline.parameters.clone(), construction_queue: pipeline.get_nodes() }
+    JointBuilder { node: joint_node, parameters: pipeline.parameters.clone(), construction_queue: pipeline.get_nodes(), state: pipeline.state.clone() }
 }
 
 pub fn joint_feedback_begin<I: Sharable, O: Sharable>(id: String, pipeline: &ConstructingPipeline) -> JointBuilder<I, O> {
@@ -266,7 +260,7 @@ pub fn joint_feedback_begin<I: Sharable, O: Sharable>(id: String, pipeline: &Con
     let mut joint_node: PipelineNode<I, O> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy, id: id };
     joint_node.input = NodeReceiver::MI(MultichannelReceiver::new(pipeline.parameters.timeout, pipeline.parameters.retries));
 
-    JointBuilder { node: joint_node, parameters: pipeline.parameters.clone(), construction_queue: pipeline.get_nodes() }
+    JointBuilder { node: joint_node, parameters: pipeline.parameters.clone(), construction_queue: pipeline.get_nodes(), state: pipeline.state.clone() }
 }
 
 
@@ -274,6 +268,7 @@ pub struct SplitBuilder<I: Sharable, O: Sharable> {
     node: PipelineNode<I, O>,
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
+    state: Arc<AtomicU8>,
 }
 impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
     pub fn split_add<F: Sharable>(&mut self, branch_name: String) -> NodeBuilder<O, F> {
@@ -294,10 +289,10 @@ impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(successor_receiver), self.parameters.timeout, self.parameters.retries));
 
                 let dummy_step = DummyStep {};
-                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone());
+                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone() }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
             }
             _ => panic!("To add a split branch you must declare a node as a splitter with split_begin!")
         }
@@ -305,7 +300,7 @@ impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
 
     pub fn split_lock(self, step: impl PipelineStep<I, O> + 'static) {
         // submit the split to the thread pool, preventing any more branches from being added and making it computable
-        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
         self.construction_queue.push(new_thread);
     }
 }
@@ -315,6 +310,7 @@ pub struct LazyNodeBuilder<I: Sharable, O: Sharable> {
     node:  PipelineNode<I, O>,
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
+    state: Arc<AtomicU8>,
 }
 impl<I: Sharable, O: Sharable> LazyNodeBuilder<I, O> {
     pub fn joint_link_lazy(mut self, id: String, step: impl PipelineStep<I, O>, source_node: NodeBuilder<I, O>) {
@@ -324,7 +320,7 @@ impl<I: Sharable, O: Sharable> LazyNodeBuilder<I, O> {
         match source_node.node.input {
             NodeReceiver::SI(receiver) => {
                 self.node.input = NodeReceiver::SI(receiver);
-                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
+                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
             }
             _ => panic!("Feedback joint cannot handle multiple input previous node"),
@@ -337,6 +333,7 @@ pub struct JointBuilder<I: Sharable, O: Sharable> {
     node: PipelineNode<I, O>,
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
+    state: Arc<AtomicU8>,
 }
 impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
     fn joint_add(&mut self, receiver: WrappedReceiver<I>) {
@@ -356,10 +353,10 @@ impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
                 self.node.output = NodeSender::SO(SingleSender::new(sender));
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), self.parameters.timeout, self.parameters.retries));
 
-                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
+                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone() }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
             }
             _ => panic!("To joint lock a node it must be declared as a joint")
         }
@@ -376,7 +373,7 @@ impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
         let mut lazy_node = PipelineNode::new();
         lazy_node.output = NodeSender::SO(SingleSender::new(sender));
 
-        LazyNodeBuilder { node: lazy_node, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone() }
+        LazyNodeBuilder { node: lazy_node, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
     }
 }
 
@@ -384,6 +381,7 @@ pub struct MultiplexerBuilder<I: Sharable, O: Sharable> {
     node: PipelineNode<I, O>,
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
+    state: Arc<AtomicU8>,
 }
 impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
     pub fn multiplexer_add<F: Sharable>(&mut self, branch_name: String) -> NodeBuilder<O, F> {
@@ -404,17 +402,17 @@ impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(successor_receiver), self.parameters.timeout, self.parameters.retries));
 
                 let dummy_step = DummyStep {};
-                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone());
+                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone() }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
             }
             _ => panic!("To add a multiplexer branch you must declare it as a multiplexer with multiplexer_start")
         }
     }
     pub fn multiplexer_lock(self, step: impl PipelineStep<I, O> + 'static) {
         // submit the split to the thread pool, preventing any more branches from being added and making it computable
-        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
         self.construction_queue.push(new_thread);
     }
 }
@@ -424,6 +422,7 @@ pub struct DemultiplexerBuilder<I: Sharable, O: Sharable> {
     node: PipelineNode<I, O>,
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
+    state: Arc<AtomicU8>,
 }
 impl<I: Sharable, O: Sharable> DemultiplexerBuilder<I, O> {
     fn demultiplexer_add(&mut self, receiver: WrappedReceiver<I>) {
@@ -443,10 +442,10 @@ impl<I: Sharable, O: Sharable> DemultiplexerBuilder<I, O> {
                 self.node.output = NodeSender::SO(SingleSender::new(sender));
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), self.parameters.timeout, self.parameters.retries));
 
-                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
+                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone() }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
             }
             _ => panic!("To joint lock a node it must be declared as a joint")
         }

@@ -3,9 +3,9 @@ name = "ZubrDSP"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "playback_prototyping"
-path = "prototypes/audio_playback.rs"
+#[[bin]]
+#name = "playback_prototyping"
+#path = "prototypes/audio_playback.rs"
 
 [dependencies]
 async-std = "1.13.0"

@@ -7,15 +7,15 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
-use crate::pipeline::api::PipelineStepResult::Carryover;
+use strum::Display;
 use super::pipeline_step::{PipelineStep, PipelineNode, CallableNode, PipelineStepResult};
 use super::pipeline_traits::{HasID, Sharable};
 use super::api::*;
 
 
 #[repr(u8)]
-#[derive(PartialEq, Debug, TryFromPrimitive)]
-enum ThreadStateSpace {
+#[derive(PartialEq, Debug, TryFromPrimitive, strum::Display, Clone)]
+pub enum ThreadStateSpace {
     RUNNING = 0,
     PAUSED = 1,
     KILLED = 2
@@ -70,23 +70,16 @@ impl ThreadStateMachine {
         Self { error_counter, state: ThreadStateSpace::PAUSED, id, no_change_timer: parameters.unchanged_state_time }
     }
     fn state_transition(&mut self, requested_state: ThreadStateSpace, mut previous_output: PipelineStepResult) {
-        if self.error_count_increment(&mut previous_output) {
+        if requested_state == ThreadStateSpace::KILLED {
+            self.kill_request_handler();
+        }
+        else if self.error_count_increment(&mut previous_output) {
             return;
         } else {
             match requested_state {
-                ThreadStateSpace::KILLED => {
-                    if self.state != ThreadStateSpace::KILLED {
-                        self.state = ThreadStateSpace::KILLED;
-                        log_message(format!("ThreadID: {} set kill state, exiting", &self.id), Level::Info);
-                    }
-                    else { sleep(Duration::from_millis(self.no_change_timer)) }
-                },
-                ThreadStateSpace::PAUSED => {
-                    self.pause_request_handler();
-                }
-                ThreadStateSpace::RUNNING => {
-                    self.running_request_handler();
-                }
+                ThreadStateSpace::PAUSED => self.pause_request_handler(),
+                ThreadStateSpace::RUNNING => self.running_request_handler(),
+                _ => ()
             }
         }
     }
@@ -129,6 +122,13 @@ impl ThreadStateMachine {
         self.state = ThreadStateSpace::RUNNING;
         log_message(format!("ThreadID: {} state set running", &self.id), Level::Info);
     }
+    fn kill_request_handler(&mut self) {
+        if self.state != ThreadStateSpace::KILLED {
+            self.state = ThreadStateSpace::KILLED;
+            log_message(format!("ThreadID: {} set kill state, exiting", &self.id), Level::Info);
+        }
+        else { sleep(Duration::from_millis(self.no_change_timer)) }
+    }
     fn pause_request_handler(&mut self) {
         match self.state {
             ThreadStateSpace::PAUSED => sleep(Duration::from_millis(self.no_change_timer)),
@@ -152,10 +152,13 @@ impl ThreadStateMachine {
     fn call<I: Sharable, O: Sharable>(&mut self, requested_state: ThreadStateSpace, previous_result: PipelineStepResult, node: &mut impl CallableNode<I, O>, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
         self.state_transition(requested_state, previous_result);
 
-        match self.state {
+        log_message(format!("ThreadID: {} call start", &self.id), Level::Debug);
+        let result = match self.state {
             ThreadStateSpace::RUNNING => node.call(step),
             _ => PipelineStepResult::Carryover
-        }
+        };
+        log_message(format!("ThreadID: {} call done", &self.id), Level::Debug);
+        result
     }
 }
 
@@ -170,7 +173,7 @@ pub struct PipelineThread {
 
 impl PipelineThread {
     pub fn new<I: Sharable, O: Sharable>
-    (step: impl PipelineStep<I, O> + 'static, node: impl CallableNode<I, O> + 'static + HasID, parameters: PipelineParameters) -> PipelineThread { // requires node to be borrowed as static?
+    (step: impl PipelineStep<I, O> + 'static, node: impl CallableNode<I, O> + 'static + HasID, parameters: PipelineParameters, state: Arc<AtomicU8>) -> PipelineThread { // requires node to be borrowed as static?
         let execution_time = Arc::new(AtomicU64::new(0));
 
         let mut thread = PipelineThread {
@@ -178,7 +181,7 @@ impl PipelineThread {
             pipeline_step_thread: None,
             return_code: Arc::new(RwLock::new(PipelineStepResult::Success)),
             id: String::from("NoID"),
-            requested_state: Arc::new(AtomicU8::new(1)) // all threads start as paused initially
+            requested_state: state // all threads start as paused initially
         };
         
         thread.instantiate_thread(step, node, parameters);
@@ -196,12 +199,15 @@ impl PipelineThread {
         self.pipeline_step_thread = Some(
             thread::spawn(move || { // refactor this so it isnt nonsense
                 let mut state_machine = ThreadStateMachine::new(&parameters, node.get_id());
-                let mut previous_result = Carryover;
-
-                while state_machine.state != ThreadStateSpace::KILLED {
+                let mut previous_result = PipelineStepResult::Carryover;
+                let kill_comp = ThreadStateSpace::KILLED;
+                
+                while state_machine.state != kill_comp {
                     let requested_state: ThreadStateSpace = ThreadStateSpace::try_from(state_receiver.load(Ordering::Acquire)).unwrap();
+                    log_message(format!("ThreadID: {} requested state {}, current state {}", node.get_id(), requested_state, state_machine.state), Level::Info);
                     let start_time = Instant::now();
                     previous_result = state_machine.call(requested_state, previous_result, &mut node, &mut step);
+                    // how can get the pause to propogate back to the pipeline?
                     execution_clone.store(start_time.elapsed().as_secs(), Ordering::Release);
                     
                     if previous_result != PipelineStepResult::Carryover {
@@ -209,42 +215,18 @@ impl PipelineThread {
                         *write_guard = previous_result.clone();
                     }
                 }
+                log_message(format!("ThreadID: {} state machine end of action loop", node.get_id()), Level::Info);
             })
         );
     }
     
-    fn increment_disconnect_counter(result: &PipelineStepResult, disconnect_count: &mut u64) {
-        match result {
-            PipelineStepResult::Success => *disconnect_count = 0,
-            _ => *disconnect_count += 1
-        }
-    }
-
-    pub fn start(&mut self) {
-        self.requested_state.store(0, Ordering::Release);
-        sleep(std::time::Duration::from_millis(10));
-        //dbg!("STARTED");
-    }
-
-    pub fn stop(&mut self) {
-        self.requested_state.store(1, Ordering::Release);
-        sleep(std::time::Duration::from_millis(10));
-    }
-
-    pub fn kill(&mut self) {
-        match self.pipeline_step_thread.take() {
-            Some(step_thread) => {
-                self.requested_state.store(2, Ordering::Release);
-                
-                sleep(std::time::Duration::from_millis(10));
-
-                log_message(format!("Stopping thread: {}", self.id), Level::Debug);
-                _ = step_thread.join();
-                log_message(format!("Thread killed: {}", self.id), Level::Debug);
+    pub fn join(self) {
+        match self.pipeline_step_thread {
+            None => panic!("pipeline thread already joined or was never created"),
+            Some(handle) => {
+                handle.join().unwrap();
+                log_message(format!("PipelineThread: Joined pipeline thread {}", self.id), Level::Info);
             },
-            None => {
-                panic!("no thread is running!");
-            }
         }
     }
 }
