@@ -61,10 +61,10 @@ mod pipeline_tests {
         
         let mut joint = joint_begin("test joint 1", &pipeline);
         
-        split.split_add("init branch 1")
+        split.split_add()
             .branch_end(&mut joint);
         
-        split.split_add("init branch 2")
+        split.split_add()
             .branch_end(&mut joint);
         
         split.split_lock(Dummy2 {});
@@ -74,10 +74,10 @@ mod pipeline_tests {
 
         let mut joint2 = joint_begin("test joint 2", &pipeline);
 
-        split2.split_add("init branch 1")
+        split2.split_add()
             .branch_end(&mut joint2);
 
-        split2.split_add("init branch 2")
+        split2.split_add()
             .branch_end(&mut joint2);
         
         split2.split_lock(Dummy2 {});

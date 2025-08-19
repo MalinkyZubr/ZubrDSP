@@ -6,3 +6,4 @@ pub use super::logging::{log_message, Level, debug, error, trace, info, warn};
 pub use super::pipeline_thread::PipelineThread;
 pub use super::pipeline::{ConstructingPipeline, ActivePipeline, PipelineParameters};
 pub use super::thread_state_space::*;
+pub use super::pipeline_taps::*;

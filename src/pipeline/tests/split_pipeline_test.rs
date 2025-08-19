@@ -60,12 +60,12 @@ mod pipeline_tests {
 
         let mut test_joint = joint_begin("Test Joint", &mut pipeline);
         
-        split.split_add("Test Branch 1")
+        split.split_add()
             .attach("branch_1 node 1", Dummy2 {})
             .attach("branch_1 node 2", Dummy2 {})
             .branch_end(&mut test_joint);
         
-        split.split_add("Test Branch 2")
+        split.split_add()
             .attach("branch_2 node 1", Dummy2 {})
             .branch_end(&mut test_joint);
         

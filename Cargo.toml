@@ -7,11 +7,14 @@ edition = "2021"
 name = "playback_prototyping"
 path = "prototypes/audio_playback.rs"
 
+[[bin]]
+name = "plotting_prototyping"
+path = "prototypes/plotting.rs"
+
 [dependencies]
 async-std = "1.13.0"
 futures = "0.3.31"
 num = "0.4.3"
-plotters = "0.3.3"
 rand = "0.9.1"
 crossbeam = "0.8"
 rayon = "1.8"
@@ -30,3 +33,7 @@ env_logger = "0.11.8"
 log = "0.4.27"
 num_enum = "0.7.4"
 thread-priority = "2.1.0"
+plotters = "0.3.7"
+systemstat = "0.2.5"
+piston_window = "0.132.0"
+plotters-piston = "0.3.0"

@@ -75,10 +75,10 @@ mod pipeline_tests {
         let mut split = NodeBuilder::start_pipeline("interleaved source", Dummy1a {receiver: input_pair.1}, &pipeline)
             .split_begin("de-interleaving split");
         
-        split.split_add("branch 1")
+        split.split_add()
             .cap_pipeline("De-interleave sink 1", Dummy3 { sender: output_sender_1 });
         
-        split.split_add("branch 2")
+        split.split_add()
             .cap_pipeline("De-interleave sink 2", Dummy3 { sender: output_sender_2 });
         
         split.split_lock(Dummy2a {});

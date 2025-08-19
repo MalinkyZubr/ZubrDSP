@@ -1,3 +1,5 @@
+mod plotting;
+
 use awedio::Sound;
 use std::env;
 use std::fs::File;

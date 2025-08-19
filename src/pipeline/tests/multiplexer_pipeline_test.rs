@@ -66,11 +66,11 @@ mod pipeline_tests {
 
         let mut demultiplexer = demultiplexer_begin("Demultiplexer", multiplexer_selector.clone(), &pipeline);
         
-        multiplexer_builder.multiplexer_add("Branch 1")
+        multiplexer_builder.multiplexer_add()
             .attach("branch 1 operator", Dummy2a {})
             .multiplex_branch_end(&mut demultiplexer);
 
-        multiplexer_builder.multiplexer_add("Branch 2")
+        multiplexer_builder.multiplexer_add()
             .attach("branch 2 operator", Dummy2b {})
             .multiplex_branch_end(&mut demultiplexer);
         

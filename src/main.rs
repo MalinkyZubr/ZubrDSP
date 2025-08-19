@@ -7,7 +7,7 @@ use pipeline::logging::initialize_logger;
 
 
 mod pipeline;
-mod byte_line;
+mod ddp;
 mod dsp;
 mod general;
 mod tests;

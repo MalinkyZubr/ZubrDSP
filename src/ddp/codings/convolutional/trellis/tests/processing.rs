@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod convolutional_tests {
-    use crate::byte_line::codings::convolutional::trellis::{
+    use crate::ddp::codings::convolutional::trellis::{
         params::ConvolutionalParams, reconstruct::ConvolutionalReassembler, trellis::{ConvolutionalEncoderLookup, ConvolutionalLookupGenerator, TrellisStateChangeEncode}, viterbi::ViterbiOpCore
     };
     use std::collections::HashMap;

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{params::ConvolutionalParams};
-use crate::byte_line::codings::opts::{check_parity};
+use crate::ddp::codings::opts::{check_parity};
 
 
 pub type TrellisState = u8;

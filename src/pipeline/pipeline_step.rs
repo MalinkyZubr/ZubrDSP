@@ -55,12 +55,6 @@ pub trait PipelineStep<I: Sharable, O: Sharable> : Send + 'static {
 }
 
 
-enum BuilderOutClass {
-    Standard,
-    Split,
-    Multiplexer,
-}
-
 #[derive(Debug, Copy, Clone)]
 struct DummyStep {}
 impl<T: Sharable> PipelineStep<T, T> for DummyStep {
@@ -149,9 +143,6 @@ pub struct NodeBuilder<I: Sharable, O: Sharable> {
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
     state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>),
-    
-    predecessor_class: BuilderOutClass
-    
 }
 impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
     pub fn attach<F: Sharable>(mut self, id: &'static str, step: impl PipelineStep<I, O> + 'static) -> NodeBuilder<O, F> {
@@ -168,7 +159,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
         self.construction_queue.push(new_thread);
 
-        NodeBuilder { node: successor, construction_queue: self.construction_queue, parameters: self.parameters, state: self.state, predecessor_class: BuilderOutClass::Standard }
+        NodeBuilder { node: successor, construction_queue: self.construction_queue, parameters: self.parameters, state: self.state}
     }
 
     pub fn cap_pipeline(mut self, id: &'static str, step: impl PipelineStep<I, O> + 'static + Sink)
@@ -200,7 +191,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let new_thread = PipelineThread::new(source_step, start_node, parameters.clone(), pipeline.get_state_communicators());
         pipeline.get_nodes().push(new_thread);
 
-        NodeBuilder { node: successor, parameters, construction_queue: pipeline.get_nodes(), state: pipeline.get_state_communicators(), predecessor_class: BuilderOutClass::Standard }
+        NodeBuilder { node: successor, parameters, construction_queue: pipeline.get_nodes(), state: pipeline.get_state_communicators() }
     }
 
     pub fn split_begin(mut self, id: &'static str) -> SplitBuilder<I, O> {
@@ -210,7 +201,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let sender: MultichannelSender<O> = MultichannelSender::new();
         self.node.output = NodeSender::MO(sender);
 
-        SplitBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state.clone(), predecessor_class: BuilderOutClass::Standard }
+        SplitBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state.clone() }
     }
 
     pub fn mutltiplexer_begin(mut self, id: &'static str, channel_selector: Arc<AtomicUsize>) -> MultiplexerBuilder<I, O> {
@@ -218,7 +209,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let sender: Multiplexer<O> = Multiplexer::new(channel_selector);
         self.node.output = NodeSender::MUO(sender);
 
-        MultiplexerBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state, predecessor_class: BuilderOutClass::Standard }
+        MultiplexerBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state }
     }
 
     pub fn branch_end(mut self, joint_builder: &mut JointBuilder<I, O>) {
@@ -283,11 +274,9 @@ pub struct SplitBuilder<I: Sharable, O: Sharable> {
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
     state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>),
-
-    predecessor_class: BuilderOutClass
 }
 impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
-    pub fn split_add<F: Sharable>(&mut self, branch_name: &str) -> NodeBuilder<O, F> {
+    pub fn split_add<F: Sharable>(&mut self) -> NodeBuilder<O, F> {
         // equivalent of start_pipeline for a subbranch of a flow diagram. generates an entry in the split for the branch
         // returns the head of the new branch which can be attached to like a normal linear pipeline
         match &mut self.node.output {
@@ -295,20 +284,11 @@ impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
                 let (split_sender, split_receiver) = mpsc::sync_channel::<O>(self.parameters.backpressure_val);
                 node_sender.add_sender(split_sender);
 
-                let (successor_sender, successor_receiver) = mpsc::sync_channel::<O>(self.parameters.backpressure_val);
-
-                let dummy_receiver = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(split_receiver), self.parameters.timeout, self.parameters.retries));
-                let dummy_attacher_node: PipelineNode<O, O> = PipelineNode { input: dummy_receiver, output: NodeSender::SO(SingleSender::new(successor_sender)), id: branch_name.to_string() };
-
                 let mut successor: PipelineNode<O, F> = PipelineNode::new();
 
-                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(successor_receiver), self.parameters.timeout, self.parameters.retries));
+                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(split_receiver), self.parameters.timeout, self.parameters.retries));
 
-                let dummy_step = DummyStep {};
-                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone(), self.state.clone());
-                self.construction_queue.push(new_thread);
-
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone(), predecessor_class: BuilderOutClass::Split }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
             }
             _ => panic!("To add a split branch you must declare a node as a splitter with split_begin!")
         }
@@ -372,7 +352,7 @@ impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
                 let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone(), predecessor_class: BuilderOutClass::Standard }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
             }
             _ => panic!("To joint lock a node it must be declared as a joint")
         }
@@ -398,11 +378,9 @@ pub struct MultiplexerBuilder<I: Sharable, O: Sharable> {
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
     state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>),
-
-    predecessor_class: BuilderOutClass
 }
 impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
-    pub fn multiplexer_add<F: Sharable>(&mut self, branch_name: &str) -> NodeBuilder<O, F> {
+    pub fn multiplexer_add<F: Sharable>(&mut self) -> NodeBuilder<O, F> {
         // equivalent of start_pipeline for a subbranch of a flow diagram. generates an entry in the split for the branch
         // returns the head of the new branch which can be attached to like a normal linear pipeline
         match &mut self.node.output {
@@ -410,20 +388,10 @@ impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
                 let (multiplexer_sender, multiplexer_receiver) = mpsc::sync_channel::<O>(self.parameters.backpressure_val);
                 node_sender.add_sender(multiplexer_sender);
 
-                let (successor_sender, successor_receiver) = mpsc::sync_channel::<O>(self.parameters.backpressure_val);
-
-                let dummy_receiver = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(multiplexer_receiver), self.parameters.timeout,  self.parameters.retries));
-                let dummy_attacher_node: PipelineNode<O, O> = PipelineNode { input: dummy_receiver, output: NodeSender::SO(SingleSender::new(successor_sender)), id: branch_name.to_string() };
-
                 let mut successor: PipelineNode<O, F> = PipelineNode::new();
 
-                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(successor_receiver), self.parameters.timeout, self.parameters.retries));
-
-                let dummy_step = DummyStep {};
-                let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone(), self.state.clone());
-                self.construction_queue.push(new_thread);
-
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone(), predecessor_class: BuilderOutClass::Multiplexer }
+                successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(multiplexer_receiver), self.parameters.timeout, self.parameters.retries));
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
             }
             _ => panic!("To add a multiplexer branch you must declare it as a multiplexer with multiplexer_start")
         }
@@ -463,7 +431,7 @@ impl<I: Sharable, O: Sharable> DemultiplexerBuilder<I, O> {
                 let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone(), predecessor_class: BuilderOutClass::Standard }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
             }
             _ => panic!("To joint lock a node it must be declared as a joint")
         }

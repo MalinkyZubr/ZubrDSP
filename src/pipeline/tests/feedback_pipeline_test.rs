@@ -74,10 +74,10 @@ mod pipeline_tests {
         let mut test_split = feedback_joint.joint_lock(Dummy2 {})
             .split_begin("Test Split");
         
-        test_split.split_add("Exit Branch")
+        test_split.split_add()
             .cap_pipeline("Exit", Dummy3 {sender: output_sender});
         
-        lazy_node.joint_link_lazy("Feedback Node", Dummy2 {}, test_split.split_add("Feedback Arm"));
+        lazy_node.joint_link_lazy("Feedback Node", Dummy2 {}, test_split.split_add());
         
         test_split.split_lock(Dummy2 {});
 

@@ -1,5 +1,5 @@
-use crate::byte_line::codings::convolutional::trellis::trellis::*;
-use crate::byte_line::codings::opts::*;
+use crate::ddp::codings::convolutional::trellis::trellis::*;
+use crate::ddp::codings::opts::*;
 use crate::pipeline::api::*;
 use std::mem;
 
