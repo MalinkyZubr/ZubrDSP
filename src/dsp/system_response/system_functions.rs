@@ -1,4 +1,5 @@
 use rustfft::FftPlanner;
+use crate::dsp::fft::fftshift::fft_shift;
 use num::Complex;
 
 pub struct ImpulseResponse {
@@ -46,6 +47,30 @@ impl ImpulseResponse {
             complex_impulse_response,
         )
     }
+
+    pub fn normalize_at_frequency(ir: Self, frequency: f32, sample_rate: f32) -> Self {
+        let tf = ir.transfer_function(0);
+        let index = (frequency * tf.len() as f32 / sample_rate) as usize;
+        let select_frequency_magnitude = tf.transfer_function[index].norm();
+        
+        let mut ir = tf.impulse_response(0);
+
+        ir.reversed_impulse_response = ir.reversed_impulse_response.iter()
+            .map(|x| x / select_frequency_magnitude)
+            .collect();
+
+        ir
+    }
+    pub fn normalize_to_max(ir: Self) -> Self {
+        Self::normalize_at_frequency(ir, 0.0, 1.0)
+    }
+    pub fn normalize_to_sum(mut ir: Self) -> Self {
+        let sum: f32 = ir.reversed_impulse_response.iter().sum();
+        ir.reversed_impulse_response = ir.reversed_impulse_response.iter()
+            .map(|x| x / sum)
+            .collect();
+        ir
+    }
     
     pub fn len(&self) -> usize {
         return self.reversed_impulse_response.len();
@@ -81,7 +106,7 @@ impl TransferFunction {
         
         self.transfer_function.truncate(self.transfer_function.len() - dropped);
 
-        let mut impulse_response: Vec<f32> = self.transfer_function
+        let impulse_response: Vec<f32> = self.transfer_function
             .iter_mut()
             .map(|x| x.re)
             .collect();
@@ -90,6 +115,6 @@ impl TransferFunction {
     }
 
     pub fn len(&self) -> usize {
-        return self.transfer_function.len();
+        self.transfer_function.len()
     }
 }

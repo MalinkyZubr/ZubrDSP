@@ -83,7 +83,7 @@ impl OverlapAddCombiner {
             output.extend_from_slice(append);
         };
         
-        return output
+        output
     }
 }
 impl PipelineStep<Vec<f32>, Vec<f32>> for OverlapAddCombiner { // need some way for elegant chunk processing. This is something ill be doing often

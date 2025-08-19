@@ -3,6 +3,7 @@ use std::f32::consts::PI;
 use crate::general::validation_functions::percent_error;
 use rand::seq::index::sample;
 use crate::dsp::system_response::system_functions::TransferFunction;
+use crate::dsp::sampling::sampling_formulas::*;
 
 pub trait FIRFilter {
     fn transfer_function(&self, frequency_buffer: Vec<f32>) -> TransferFunction; // Piecewise function defining behavior of the filter. What is y at this frequency x?
@@ -14,7 +15,7 @@ pub fn generate_frequency_buffer(buffer_size: usize, sample_frequency: f32) -> V
 
     pos.extend_from_slice(neg.as_slice());
 
-    let acc = pos.iter().map(|n| *n as f32 * sample_frequency / buffer_size as f32).collect();
+    let acc = pos.iter().map(|n| frequency_from_index(*n as usize, sample_frequency, buffer_size)).collect();
 
     acc
 }

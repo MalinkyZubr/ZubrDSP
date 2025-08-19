@@ -46,8 +46,20 @@ pub trait PipelineStep<I: Sharable, O: Sharable> : Send + 'static {
     }
     // intended for sink nodes. When the sink sender is 'Dummy'. This is a CONSUMER endpoint. Must put the output wherever it needs to go on its own
     fn run_SIDO(&mut self, input: I) -> Result<ODFormat<O>, String> { panic!("Dummy out Not Implemented") }
+    // optional method to be run whenever a pause signal is received
+    fn pause_behavior(&mut self) { () }
+    // optional method to be run whenever a start signal is received
+    fn start_behavior(&mut self) { () }
+    // optional method to be run whenevr a kill signal is received
+    fn kill_behavior(&mut self) { () }
 }
 
+
+enum BuilderOutClass {
+    Standard,
+    Split,
+    Multiplexer,
+}
 
 #[derive(Debug, Copy, Clone)]
 struct DummyStep {}
@@ -137,6 +149,9 @@ pub struct NodeBuilder<I: Sharable, O: Sharable> {
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
     state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>),
+    
+    predecessor_class: BuilderOutClass
+    
 }
 impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
     pub fn attach<F: Sharable>(mut self, id: &'static str, step: impl PipelineStep<I, O> + 'static) -> NodeBuilder<O, F> {
@@ -153,7 +168,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
         self.construction_queue.push(new_thread);
 
-        NodeBuilder { node: successor, construction_queue: self.construction_queue, parameters: self.parameters, state: self.state }
+        NodeBuilder { node: successor, construction_queue: self.construction_queue, parameters: self.parameters, state: self.state, predecessor_class: BuilderOutClass::Standard }
     }
 
     pub fn cap_pipeline(mut self, id: &'static str, step: impl PipelineStep<I, O> + 'static + Sink)
@@ -185,7 +200,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let new_thread = PipelineThread::new(source_step, start_node, parameters.clone(), pipeline.get_state_communicators());
         pipeline.get_nodes().push(new_thread);
 
-        NodeBuilder { node: successor, parameters, construction_queue: pipeline.get_nodes(), state: pipeline.get_state_communicators() }
+        NodeBuilder { node: successor, parameters, construction_queue: pipeline.get_nodes(), state: pipeline.get_state_communicators(), predecessor_class: BuilderOutClass::Standard }
     }
 
     pub fn split_begin(mut self, id: &'static str) -> SplitBuilder<I, O> {
@@ -195,7 +210,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let sender: MultichannelSender<O> = MultichannelSender::new();
         self.node.output = NodeSender::MO(sender);
 
-        SplitBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state.clone() }
+        SplitBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state.clone(), predecessor_class: BuilderOutClass::Standard }
     }
 
     pub fn mutltiplexer_begin(mut self, id: &'static str, channel_selector: Arc<AtomicUsize>) -> MultiplexerBuilder<I, O> {
@@ -203,7 +218,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let sender: Multiplexer<O> = Multiplexer::new(channel_selector);
         self.node.output = NodeSender::MUO(sender);
 
-        MultiplexerBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state }
+        MultiplexerBuilder { node: self.node, parameters: self.parameters, construction_queue: self.construction_queue, state: self.state, predecessor_class: BuilderOutClass::Standard }
     }
 
     pub fn branch_end(mut self, joint_builder: &mut JointBuilder<I, O>) {
@@ -268,6 +283,8 @@ pub struct SplitBuilder<I: Sharable, O: Sharable> {
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
     state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>),
+
+    predecessor_class: BuilderOutClass
 }
 impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
     pub fn split_add<F: Sharable>(&mut self, branch_name: &str) -> NodeBuilder<O, F> {
@@ -291,7 +308,7 @@ impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
                 let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone(), predecessor_class: BuilderOutClass::Split }
             }
             _ => panic!("To add a split branch you must declare a node as a splitter with split_begin!")
         }
@@ -305,13 +322,13 @@ impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
 }
 
 
-pub struct LazyNodeBuilder<I: Sharable, O: Sharable> {
+pub struct LazyJointInputBuilder<I: Sharable, O: Sharable> {
     node:  PipelineNode<I, O>,
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
     state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>),
 }
-impl<I: Sharable, O: Sharable> LazyNodeBuilder<I, O> {
+impl<I: Sharable, O: Sharable> LazyJointInputBuilder<I, O> {
     pub fn joint_link_lazy(mut self, id: &'static str, step: impl PipelineStep<I, O>, source_node: NodeBuilder<I, O>) {
         // takes the final node of a branch and attaches it to a lazy node's input. You must still assign the lazy node input with joint_lazy_finalize
         self.node.set_id(id);
@@ -355,13 +372,13 @@ impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
                 let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone(), predecessor_class: BuilderOutClass::Standard }
             }
             _ => panic!("To joint lock a node it must be declared as a joint")
         }
     }
 
-    pub fn joint_add_lazy<F: Sharable>(&mut self) -> LazyNodeBuilder<F, I> {
+    pub fn joint_add_lazy<F: Sharable>(&mut self) -> LazyJointInputBuilder<F, I> {
         // creates an empty placeholder node for a joint that can be made concrete later to facilitate feedback architecture
         let (sender, receiver) = mpsc::sync_channel::<I>(self.parameters.backpressure_val);
         match &mut self.node.input {
@@ -372,7 +389,7 @@ impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
         let mut lazy_node = PipelineNode::new();
         lazy_node.output = NodeSender::SO(SingleSender::new(sender));
 
-        LazyNodeBuilder { node: lazy_node, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
+        LazyJointInputBuilder { node: lazy_node, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
     }
 }
 
@@ -381,6 +398,8 @@ pub struct MultiplexerBuilder<I: Sharable, O: Sharable> {
     construction_queue: ConstructionQueue,
     parameters: PipelineParameters,
     state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>),
+
+    predecessor_class: BuilderOutClass
 }
 impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
     pub fn multiplexer_add<F: Sharable>(&mut self, branch_name: &str) -> NodeBuilder<O, F> {
@@ -404,7 +423,7 @@ impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
                 let new_thread = PipelineThread::new(dummy_step, dummy_attacher_node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone(), predecessor_class: BuilderOutClass::Multiplexer }
             }
             _ => panic!("To add a multiplexer branch you must declare it as a multiplexer with multiplexer_start")
         }
@@ -444,7 +463,7 @@ impl<I: Sharable, O: Sharable> DemultiplexerBuilder<I, O> {
                 let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
                 self.construction_queue.push(new_thread);
 
-                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
+                NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone(), predecessor_class: BuilderOutClass::Standard }
             }
             _ => panic!("To joint lock a node it must be declared as a joint")
         }

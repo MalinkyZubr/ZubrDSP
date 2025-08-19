@@ -182,4 +182,8 @@ impl ActivePipeline {
         
         self.state_passer.join();
     }
+    
+    pub fn is_running(&self) -> bool {
+        self.state_passer.state.load(Ordering::Acquire) == ThreadStateSpace::RUNNING as u8
+    }
 }

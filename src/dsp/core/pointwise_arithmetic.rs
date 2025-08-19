@@ -1,4 +1,5 @@
 use crate::pipeline::api::*;
+use num::Complex;
 
 
 pub fn pointwise_arithmetic<F>(mut data: Vec<Vec<f32>>, operation: F) -> Vec<f32> 
@@ -11,6 +12,20 @@ where F: Fn(f32, f32) -> f32 {
         }
     }
     
+    result_vector
+}
+
+
+pub fn pointwise_arithmetic_complex<F>(mut data: Vec<Vec<Complex<f32>>>, operation: F) -> Vec<Complex<f32>>
+where F: Fn(Complex<f32>, Complex<f32>) -> Complex<f32> {
+    let mut result_vector = data.pop().unwrap();
+
+    for index in 0..result_vector.len() {
+        for data_vector in data.iter() {
+            result_vector[index] = operation(data_vector[index], result_vector[index]);
+        }
+    }
+
     result_vector
 }
 

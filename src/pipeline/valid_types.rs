@@ -1,5 +1,6 @@
 use num::Complex;
 use super::pipeline_traits::HasDefault;
+use num::traits;
 
 pub trait ValidFloat {}
 impl ValidFloat for f32 {}

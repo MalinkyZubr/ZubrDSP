@@ -398,7 +398,7 @@ impl <O: Sharable> NodeSender<O> {
             NodeSender::SO(sender) => sender.send(data),
             NodeSender::MO(sender) => sender.send_all(data),
             NodeSender::MUO(sender) => sender.send(data),
-            NodeSender::Dummy => {Err(SendError(match data { ODFormat::Standard(val) => val, _ => panic!("How this even happens?")}))}
+            NodeSender::Dummy => Ok(())
         }
     }
 }

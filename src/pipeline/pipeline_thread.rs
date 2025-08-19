@@ -41,7 +41,7 @@ impl ThreadErrorCounter {
         }
         else { false }
     }
-    pub fn infrastructure_error_lim_check(&mut self, id: &String) -> bool{
+    pub fn infrastructure_error_lim_check(&mut self, id: &String) -> bool {
         if self.max_infrastructure_errors == 0 { false }
         else if self.infrastructure_errors_received > self.max_infrastructure_errors {
             log_message(format!("ThreadID: {} max allowed infrastructure errors received", id), Level::Error);
@@ -63,26 +63,26 @@ impl ThreadStateMachine {
         let error_counter = ThreadErrorCounter::new(parameters.max_infrastructure_errors, parameters.max_compute_errors);
         Self { error_counter, state: ThreadStateSpace::PAUSED, id, no_change_timer: parameters.unchanged_state_time, state_change_messenger: messenger }
     }
-    fn state_transition(&mut self, requested_state: ThreadStateSpace, mut previous_output: PipelineStepResult) {
+    fn state_transition<I: Sharable, O: Sharable>(&mut self, requested_state: ThreadStateSpace, mut previous_output: PipelineStepResult, step: &mut impl PipelineStep<I, O>) {
         if requested_state == ThreadStateSpace::KILLED {
-            self.kill_request_handler();
+            self.kill_request_handler(step);
         }
-        else if self.error_count_increment(&mut previous_output) {
+        else if self.error_count_increment(&mut previous_output, step) {
             return;
         } else {
             match requested_state {
-                ThreadStateSpace::PAUSED => self.pause_request_handler(),
-                ThreadStateSpace::RUNNING => self.running_request_handler(),
+                ThreadStateSpace::PAUSED => self.pause_request_handler(step),
+                ThreadStateSpace::RUNNING => self.running_request_handler(step),
                 _ => ()
             }
         }
     }
-    fn error_count_increment(&mut self, previous_output: &mut PipelineStepResult) -> bool {
+    fn error_count_increment<I: Sharable, O: Sharable>(&mut self, previous_output: &mut PipelineStepResult, step: &mut impl PipelineStep<I, O>) -> bool {
         match previous_output {
             PipelineStepResult::SendError => {
                 self.error_counter.infrastructure_error();
                 log_message(format!("ThreadID: {} send error received", &self.id), Level::Warn);
-                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state_upstream() }
+                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state_upstream(step) }
                 true
             },
             PipelineStepResult::RecvTimeoutError(err) => {
@@ -91,68 +91,71 @@ impl ThreadStateMachine {
                     RecvTimeoutError::Timeout => log_message(format!("ThreadID: {} receive timeout received", &self.id), Level::Warn),
                     RecvTimeoutError::Disconnected => log_message(format!("ThreadID: {} receiver disconnected received", &self.id), Level::Warn)
                 }
-                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state_upstream() }
+                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state_upstream(step) }
                 true
             }
             PipelineStepResult::ComputeError(message) => {
                 self.error_counter.compute_error();
                 log_message(format!("ThreadID: {} compute error {}, pausing", &self.id, message), Level::Warn);
-                if self.error_counter.compute_error_lim_check(&self.id) { self.set_pause_state_upstream() };
+                if self.error_counter.compute_error_lim_check(&self.id) { self.set_pause_state_upstream(step) };
                 true
             }
             PipelineStepResult::Success => { self.error_counter.success(); false }
             PipelineStepResult::Carryover => false
         }
     }
-    fn set_kill_state(&mut self) {
+    fn set_kill_state<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
         self.state = ThreadStateSpace::KILLED;
+        step.kill_behavior();
         log_message(format!("ThreadID: {} state set killed", &self.id), Level::Info);
     }
-    fn set_kill_state_upstream(&mut self) {
-        self.set_kill_state();
+    fn set_kill_state_upstream<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
+        self.set_kill_state(step);
         log_message(format!("Thread ID: {}, sending kill upstream", &self.id), Level::Debug);
         match self.state_change_messenger.send(ThreadStateSpace::KILLED) {
             Err(error) => panic!("Critical error, cannot reach management thread!"),
             Ok(_) => log_message(format!("Thread ID: {}, sent kill upstream", &self.id), Level::Debug)
         }
     }
-    fn set_pause_state(&mut self) {
+    fn set_pause_state<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
         self.state = ThreadStateSpace::PAUSED;
+        step.pause_behavior();
         log_message(format!("ThreadID: {} state set paused", &self.id), Level::Info);
     }
-    fn set_pause_state_upstream(&mut self) {
-        self.set_pause_state();
+    fn set_pause_state_upstream<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
+        self.set_pause_state(step);
         log_message(format!("Thread ID: {}, sending pause upstream", &self.id), Level::Debug);
         match self.state_change_messenger.send(ThreadStateSpace::PAUSED) {
             Err(error) => panic!("Critical error, cannot reach management thread!"),
             Ok(_) => log_message(format!("Thread ID: {}, sent pause upstream", &self.id), Level::Debug)
         }
     }
-    fn set_running_state(&mut self) {
+    fn set_running_state<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
         self.state = ThreadStateSpace::RUNNING;
+        step.start_behavior();
         log_message(format!("ThreadID: {} state set running", &self.id), Level::Info);
     }
-    fn kill_request_handler(&mut self) {
+    fn kill_request_handler<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
         if self.state != ThreadStateSpace::KILLED {
-            self.state = ThreadStateSpace::KILLED;
+            self.set_kill_state(step);
             log_message(format!("ThreadID: {} set kill state, exiting", &self.id), Level::Info);
         }
         else { sleep(Duration::from_millis(self.no_change_timer)) }
     }
-    fn pause_request_handler(&mut self) {
+    fn pause_request_handler<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
         match self.state {
             ThreadStateSpace::PAUSED => sleep(Duration::from_millis(self.no_change_timer)),
-            ThreadStateSpace::RUNNING => self.set_pause_state(),
+            ThreadStateSpace::RUNNING => self.set_pause_state(step),
             ThreadStateSpace::KILLED => {
                 log_message(format!("ThreadID: {} is killed, cannot set to paused state", &self.id), Level::Warn);
                 sleep(Duration::from_millis(self.no_change_timer))
             }
         }
     }
-    fn running_request_handler(&mut self) {
+    fn running_request_handler<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
         match self.state {
             ThreadStateSpace::RUNNING => (),
-            ThreadStateSpace::PAUSED => self.set_running_state(),
+            ThreadStateSpace::PAUSED => self.set_running_state(step),
             ThreadStateSpace::KILLED => {
                 log_message(format!("ThreadID: {} is killed, cannot set to running state", &self.id), Level::Warn);
                 sleep(Duration::from_millis(self.no_change_timer))
@@ -160,7 +163,7 @@ impl ThreadStateMachine {
         }
     }
     fn call<I: Sharable, O: Sharable>(&mut self, requested_state: ThreadStateSpace, previous_result: PipelineStepResult, node: &mut impl CallableNode<I, O>, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
-        self.state_transition(requested_state, previous_result);
+        self.state_transition(requested_state, previous_result, step);
 
         let result = match self.state {
             ThreadStateSpace::RUNNING => {
