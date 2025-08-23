@@ -11,6 +11,10 @@ path = "prototypes/audio_playback.rs"
 name = "plotting_prototyping"
 path = "prototypes/plotting.rs"
 
+[[bin]]
+name = "tui_prototyping"
+path = "prototypes/frontend.rs"
+
 [dependencies]
 async-std = "1.13.0"
 futures = "0.3.31"
@@ -37,3 +41,15 @@ plotters = "0.3.7"
 systemstat = "0.2.5"
 piston_window = "0.132.0"
 plotters-piston = "0.3.0"
+tracing = "0.1.41"
+tracing-error = "0.2.1"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+directories = "6.0.0"
+lazy_static = "1.5.0"
+itertools = "0.14.0"
+unicode-width = "0.2.1"
+tui-logger = "0.17.3"
+tui-big-text = "0.7.1"
+tui-menu = "0.3.0"
+tui-nodes = "0.9.0"
+tui-tree-widget = "0.23.1"

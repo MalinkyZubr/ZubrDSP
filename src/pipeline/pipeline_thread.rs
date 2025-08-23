@@ -180,10 +180,10 @@ impl ThreadStateMachine {
 
 
 pub struct PipelineThread {
-    requested_state: Arc<AtomicU8>,
-    execution_time: Arc<AtomicU64>,
+    pub requested_state: Arc<AtomicU8>,
+    pub execution_time: Arc<AtomicU64>,
     pipeline_step_thread: Option<JoinHandle<()>>,
-    return_code: Arc<RwLock<PipelineStepResult>>,
+    pub return_code: Arc<RwLock<PipelineStepResult>>,
     state_sender: Option<mpsc::Sender<ThreadStateSpace>>,
     pub id: String
 }
@@ -232,7 +232,7 @@ impl PipelineThread {
                 let start_time = Instant::now();
                 previous_result = state_machine.call(requested_state, previous_result, &mut node, &mut step);
 
-                execution_clone.store(start_time.elapsed().as_secs(), Ordering::Release);
+                execution_clone.store(start_time.elapsed().as_micros() as u64, Ordering::Release);
 
                 if previous_result != PipelineStepResult::Carryover {
                     let mut write_guard = return_code_clone.write().unwrap();

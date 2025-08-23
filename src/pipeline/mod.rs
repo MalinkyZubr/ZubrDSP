@@ -13,6 +13,5 @@ mod pipeline_comms;
 pub mod api;
 pub mod logging;
 mod thread_state_space;
-mod pipeline_taps;
 //mod dummy;
 //mod curses;

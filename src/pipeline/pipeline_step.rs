@@ -5,6 +5,7 @@ use std::sync::mpsc::{RecvTimeoutError};
 use std::sync::Arc;
 use futures::future::Lazy;
 use log::Level;
+use crossbeam_queue::ArrayQueue;
 use crate::pipeline::pipeline::{ConstructingPipeline, ConstructionQueue, PipelineParameters};
 use super::pipeline_thread::PipelineThread;
 use super::pipeline_traits::{Sharable, Unit, HasID, Source, Sink};
@@ -72,6 +73,7 @@ pub struct PipelineNode<I: Sharable, O: Sharable> {
     pub input: NodeReceiver<I>,
     pub output: NodeSender<O>,
     pub id: String,
+    tap: Option<Arc<ArrayQueue<ODFormat<O>>>>
 }
 
 impl<I: Sharable, O: Sharable> HasID for PipelineNode<I, O> {
@@ -108,15 +110,31 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
             input: NodeReceiver::Dummy,
             output: NodeSender::Dummy,
             id: "".to_string(),
+            tap: None
         }
     }
 
     fn compute_handler(&mut self, output_data: Result<ODFormat<O>, String>) -> PipelineStepResult {
         match output_data {
             Err(err) => PipelineStepResult::ComputeError(err),
-            Ok(extracted_data) => match self.output.send(extracted_data) {
-                Err(_) => PipelineStepResult::SendError,
-                Ok(_) => PipelineStepResult::Success
+            Ok(extracted_data) => {
+                let extracted_data = self.push_to_tap(extracted_data);
+                match self.output.send(extracted_data) {
+                    Err(_) => PipelineStepResult::SendError,
+                    Ok(_) => {
+                        PipelineStepResult::Success
+                    }
+                }
+            }
+        }
+    }
+    fn push_to_tap(&mut self, output_data: ODFormat<O>) -> ODFormat<O> {
+        match &mut self.tap {
+            None => output_data,
+            Some(tap) => {
+                let cloned_output = output_data.clone();
+                tap.push(output_data);
+                cloned_output
             }
         }
     }
@@ -183,6 +201,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
             input: NodeReceiver::Dummy,
             output: NodeSender::SO(SingleSender::new(sender)),
             id: start_id.to_string(),
+            tap: None,
         };
 
         let mut successor: PipelineNode<O, F> = PipelineNode::new();
@@ -243,7 +262,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
 
 pub fn demultiplexer_begin<JI: Sharable, JO: Sharable>(id: &str, channel_selector: Arc<AtomicUsize>, pipeline: &ConstructingPipeline) -> DemultiplexerBuilder<JI, JO> {
     // create a node marked as a join which can take multiple input receivers. used to join multiple sub branches together (eg adder or something)
-    let mut demultiplexer_node: PipelineNode<JI, JO> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy, id: id.to_string() };
+    let mut demultiplexer_node: PipelineNode<JI, JO> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy, id: id.to_string(), tap: None };
     let parameters = pipeline.get_cloned_parameters();
     demultiplexer_node.input = NodeReceiver::DMI(Demultiplexer::new(channel_selector, parameters.timeout, parameters.retries));
 
@@ -252,7 +271,7 @@ pub fn demultiplexer_begin<JI: Sharable, JO: Sharable>(id: &str, channel_selecto
 
 pub fn joint_begin<JI: Sharable, JO: Sharable>(id: &str, pipeline: &ConstructingPipeline) -> JointBuilder<JI, JO> {
     // create a node marked as a joint which can take multiple input receivers. used to join multiple sub branches together (eg adder or something)
-    let mut joint_node: PipelineNode<JI, JO> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy, id: id.to_string() };
+    let mut joint_node: PipelineNode<JI, JO> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy, id: id.to_string(), tap: None };
     let parameters = pipeline.get_cloned_parameters();
     joint_node.input = NodeReceiver::MI(MultichannelReceiver::new(parameters.timeout, parameters.retries));
 
@@ -261,7 +280,7 @@ pub fn joint_begin<JI: Sharable, JO: Sharable>(id: &str, pipeline: &Constructing
 
 pub fn joint_feedback_begin<I: Sharable, O: Sharable>(id: &str, pipeline: &ConstructingPipeline) -> JointBuilder<I, O> {
     // Since there is no convenient origin point for a joint used in feedback in the pattern, a standalone function is needed to support type inference
-    let mut joint_node: PipelineNode<I, O> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy, id: id.to_string() };
+    let mut joint_node: PipelineNode<I, O> = PipelineNode { input: NodeReceiver::Dummy, output: NodeSender::Dummy, id: id.to_string(), tap: None };
     let parameters = pipeline.get_cloned_parameters();
     joint_node.input = NodeReceiver::MI(MultichannelReceiver::new(parameters.timeout, parameters.retries));
 

@@ -2,6 +2,7 @@
 // format adapters were designed for a previous (invalid) understanding of how some DSP algorithms worked. They only create latency
 // type adapters (primarily modulators) are much more important and baked directly into a proper DSP pipeline for radio transmission and reception
 
+use std::collections::HashMap;
 use super::pipeline_thread::{PipelineThread};
 //use super::dummy::{dummy_thread_function, DummyManager, DummyRunner};
 use std::thread::{self, JoinHandle, Thread};
@@ -9,8 +10,10 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpmc::RecvTimeoutError;
+use std::time::Instant;
 use crossbeam_queue::SegQueue;
 use super::api::*;
+use crate::frontend::curses::app::{App, AppBuilder};
 
 
 pub type ConstructionQueue = Arc<SegQueue<PipelineThread>>;
@@ -121,7 +124,7 @@ impl CommandStatePasser {
 pub struct ConstructingPipeline {
     nodes: ConstructionQueue,
     parameters: PipelineParameters,
-    state_passer: CommandStatePasser
+    state_passer: CommandStatePasser,
 }
 impl ConstructingPipeline {
     pub fn new(retries: usize, timeout: u64, backpressure_val: usize, max_infrastructure_errors: usize, max_compute_errors: usize, unchanged_state_time: u64) -> Self {
@@ -129,7 +132,7 @@ impl ConstructingPipeline {
         Self {
             nodes: Arc::new(SegQueue::new()),
             parameters,
-            state_passer: CommandStatePasser::new(timeout)
+            state_passer: CommandStatePasser::new(timeout),
         }
     }
     pub fn get_cloned_parameters(&self) -> PipelineParameters {
@@ -148,15 +151,36 @@ impl ConstructingPipeline {
             static_nodes.push(self.nodes.pop().unwrap());
         }
         
-        ActivePipeline { nodes: static_nodes, parameters: self.parameters, state_passer: self.state_passer }
+        ActivePipeline { nodes: static_nodes, parameters: self.parameters, state_passer: self.state_passer, start_time: Instant::now() }
     }
+    // pub fn finish_with_tui(mut self) -> App {
+    //     
+    // }
 }
 
+
+pub struct ThreadDiagnostic {
+    pub thread_state: ThreadStateSpace,
+    pub return_code: PipelineStepResult,
+    pub execution_time: u64,
+    pub id: String
+}
+impl ThreadDiagnostic {
+    pub fn new(thread: &PipelineThread) -> Self {
+        Self {
+            thread_state: ThreadStateSpace::try_from(thread.requested_state.load(Ordering::Acquire)).unwrap(),
+            return_code: thread.return_code.read().unwrap().clone(),
+            execution_time: thread.execution_time.load(Ordering::Acquire),
+            id: thread.id.clone()
+        }
+    }
+}
 
 pub struct ActivePipeline {
     nodes: Vec<PipelineThread>,
     parameters: PipelineParameters,
-    state_passer: CommandStatePasser
+    state_passer: CommandStatePasser,
+    start_time: Instant
 }
 impl ActivePipeline {
     pub fn start(&mut self) {
@@ -182,7 +206,15 @@ impl ActivePipeline {
         
         self.state_passer.join();
     }
-    
+    pub fn get_thread_diagnostics(&self) -> Vec<ThreadDiagnostic> {
+        let mut diagnostics = Vec::with_capacity(self.nodes.len());
+        
+        for thread in self.nodes.iter() {
+            diagnostics.push(ThreadDiagnostic::new(thread));
+        }
+        
+        diagnostics
+    }
     pub fn is_running(&self) -> bool {
         self.state_passer.state.load(Ordering::Acquire) == ThreadStateSpace::RUNNING as u8
     }

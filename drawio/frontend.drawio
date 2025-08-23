@@ -231,7 +231,7 @@
         <mxCell id="5YAu0c5_zvP6CTd3Veq1-73" value="Communication Layer" style="swimlane;whiteSpace=wrap;html=1;" vertex="1" parent="1">
           <mxGeometry x="10" y="820" width="660" height="350" as="geometry" />
         </mxCell>
-        <mxCell id="5YAu0c5_zvP6CTd3Veq1-74" value="critical path should remain local. Only one way ejection to other machines or containers" style="whiteSpace=wrap;html=1;rounded=0;" vertex="1" parent="1">
+        <mxCell id="5YAu0c5_zvP6CTd3Veq1-74" value="critical path should remain local. Only one way ejection to other machines or containers. Only for sources and sinks" style="whiteSpace=wrap;html=1;rounded=0;" vertex="1" parent="1">
           <mxGeometry x="730" y="710" width="120" height="110" as="geometry" />
         </mxCell>
       </root>
