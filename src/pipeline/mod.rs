@@ -14,5 +14,6 @@ pub mod api;
 pub mod logging;
 mod thread_state_space;
 pub mod pipeline_thread_orchestrator;
+mod pipeline_thread_admin_io;
 //mod dummy;
 //mod curses;

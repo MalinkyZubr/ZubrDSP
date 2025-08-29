@@ -19,7 +19,6 @@ pub enum PipelineStepResult {
     SendError,
     RecvTimeoutError(RecvTimeoutError),
     ComputeError(String),
-    Carryover
 }
 
 // how can I make multiple input and output types more convenient?
@@ -93,7 +92,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
         }
     }
 
-    pub fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
+    pub fn call(&mut self, step: &mut Box<dyn PipelineStep<I, O>>) -> PipelineStepResult {
         let received_result = self.input.receive();
         match received_result {
             Err(err) => {
@@ -132,7 +131,7 @@ impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
         }
     }
     
-    fn route_computation(&mut self, input_data: ReceiveType<I>, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
+    fn route_computation(&mut self, input_data: ReceiveType<I>, step: &mut Box<dyn PipelineStep<I, O>>) -> PipelineStepResult {
         //log_message(format!("CRITICAL: NodeID: {}, Received message: {}", &self.id, &input_data), Level::Debug);
         self.compute_handler(match (input_data, &self.output) {
             (ReceiveType::Single(t), NodeSender::SO(_) | NodeSender::MUO(_)) => step.run_SISO(t),
@@ -167,7 +166,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         self.node.output = NodeSender::SO(SingleSender::new(sender));
         successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), self.parameters.timeout, self.parameters.retries));
 
-        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
         self.construction_queue.push(new_thread);
 
         NodeBuilder { node: successor, construction_queue: self.construction_queue, parameters: self.parameters, state: self.state}
@@ -180,7 +179,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
 
         self.node.output = NodeSender::Dummy;
 
-        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state);
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
         self.construction_queue.push(new_thread);
     }
 
@@ -200,7 +199,7 @@ impl<I: Sharable, O: Sharable> NodeBuilder<I, O> {
         let mut successor: PipelineNode<O, F> = PipelineNode::new();
         successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), parameters.timeout, parameters.retries));
 
-        let new_thread = PipelineThread::new(source_step, start_node, parameters.clone(), pipeline.get_state_communicators());
+        let new_thread = PipelineThread::new(source_step, start_node, parameters.clone());
         pipeline.get_nodes().push(new_thread);
 
         NodeBuilder { node: successor, parameters, construction_queue: pipeline.get_nodes(), state: pipeline.get_state_communicators() }
@@ -308,7 +307,7 @@ impl<I: Sharable, O: Sharable> SplitBuilder<I, O> {
 
     pub fn split_lock(self, step: impl PipelineStep<I, O> + 'static) {
         // submit the split to the thread pool, preventing any more branches from being added and making it computable
-        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
         self.construction_queue.push(new_thread);
     }
 }
@@ -328,7 +327,7 @@ impl<I: Sharable, O: Sharable> LazyJointInputBuilder<I, O> {
         match source_node.node.input {
             NodeReceiver::SI(receiver) => {
                 self.node.input = NodeReceiver::SI(receiver);
-                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
+                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
                 self.construction_queue.push(new_thread);
             }
             _ => panic!("Feedback joint cannot handle multiple input previous node"),
@@ -361,7 +360,7 @@ impl<I: Sharable, O: Sharable> JointBuilder<I, O> {
                 self.node.output = NodeSender::SO(SingleSender::new(sender));
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), self.parameters.timeout, self.parameters.retries));
 
-                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
+                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
                 self.construction_queue.push(new_thread);
 
                 NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }
@@ -410,7 +409,7 @@ impl<I: Sharable, O: Sharable> MultiplexerBuilder<I, O> {
     }
     pub fn multiplexer_lock(self, step: impl PipelineStep<I, O> + 'static) {
         // submit the split to the thread pool, preventing any more branches from being added and making it computable
-        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
+        let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
         self.construction_queue.push(new_thread);
     }
 }
@@ -440,7 +439,7 @@ impl<I: Sharable, O: Sharable> DemultiplexerBuilder<I, O> {
                 self.node.output = NodeSender::SO(SingleSender::new(sender));
                 successor.input = NodeReceiver::SI(SingleReceiver::new(WrappedReceiver::new(receiver), self.parameters.timeout, self.parameters.retries));
 
-                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone(), self.state.clone());
+                let new_thread = PipelineThread::new(step, self.node, self.parameters.clone());
                 self.construction_queue.push(new_thread);
 
                 NodeBuilder { node: successor, parameters: self.parameters.clone(), construction_queue: self.construction_queue.clone(), state: self.state.clone() }

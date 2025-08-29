@@ -53,37 +53,22 @@ impl ThreadErrorCounter {
 
 struct ThreadStateMachine {
     state: ThreadStateSpace,
+    //previous_result: PipelineStepResult,
     error_counter: ThreadErrorCounter,
     no_change_timer: u64,
-    state_change_messenger: mpsc::Sender<ThreadStateSpace>,
     id: String
 }
 impl ThreadStateMachine {
-    pub fn new(parameters: &PipelineParameters, id: String, messenger: mpsc::Sender<ThreadStateSpace>) -> Self {
+    pub fn new(parameters: &PipelineParameters, id: String) -> Self {
         let error_counter = ThreadErrorCounter::new(parameters.max_infrastructure_errors, parameters.max_compute_errors);
-        Self { error_counter, state: ThreadStateSpace::PAUSED, id, no_change_timer: parameters.unchanged_state_time, state_change_messenger: messenger }
+        Self { error_counter, state: ThreadStateSpace::PAUSED, id, no_change_timer: parameters.unchanged_state_time }
     }
-    fn state_transition<I: Sharable, O: Sharable>(&mut self, requested_state: ThreadStateSpace, mut previous_output: PipelineStepResult, step: &mut impl PipelineStep<I, O>) {
-        if requested_state == ThreadStateSpace::KILLED {
-            self.kill_request_handler(step);
-        }
-        else if self.error_count_increment(&mut previous_output, step) {
-            return;
-        } else {
-            match requested_state {
-                ThreadStateSpace::PAUSED => self.pause_request_handler(step),
-                ThreadStateSpace::RUNNING => self.running_request_handler(step),
-                _ => ()
-            }
-        }
-    }
-    fn error_count_increment<I: Sharable, O: Sharable>(&mut self, previous_output: &mut PipelineStepResult, step: &mut impl PipelineStep<I, O>) -> bool {
-        match previous_output {
+    fn evaluate_step_result<I: Sharable, O: Sharable>(&mut self, output: &PipelineStepResult, step: &mut Box<dyn PipelineStep<I, O>>) { 
+        match output {
             PipelineStepResult::SendError => {
                 self.error_counter.infrastructure_error();
                 log_message(format!("ThreadID: {} send error received", &self.id), Level::Warn);
-                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state_upstream(step) }
-                true
+                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state(step) }
             },
             PipelineStepResult::RecvTimeoutError(err) => {
                 self.error_counter.infrastructure_error();
@@ -91,58 +76,39 @@ impl ThreadStateMachine {
                     RecvTimeoutError::Timeout => log_message(format!("ThreadID: {} receive timeout received", &self.id), Level::Warn),
                     RecvTimeoutError::Disconnected => log_message(format!("ThreadID: {} receiver disconnected received", &self.id), Level::Warn)
                 }
-                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state_upstream(step) }
-                true
+                if self.error_counter.infrastructure_error_lim_check(&self.id) { self.set_kill_state(step) }
             }
             PipelineStepResult::ComputeError(message) => {
                 self.error_counter.compute_error();
                 log_message(format!("ThreadID: {} compute error {}, pausing", &self.id, message), Level::Warn);
-                if self.error_counter.compute_error_lim_check(&self.id) { self.set_pause_state_upstream(step) };
-                true
+                if self.error_counter.compute_error_lim_check(&self.id) { self.set_pause_state(step) };
             }
-            PipelineStepResult::Success => { self.error_counter.success(); false }
-            PipelineStepResult::Carryover => false
+            PipelineStepResult::Success => self.error_counter.success()
         }
     }
-    fn set_kill_state<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
+    fn set_kill_state<I: Sharable, O: Sharable>(&mut self, step: &mut Box<dyn PipelineStep<I, O>>) {
         self.state = ThreadStateSpace::KILLED;
         step.kill_behavior();
         log_message(format!("ThreadID: {} state set killed", &self.id), Level::Info);
     }
-    fn set_kill_state_upstream<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
-        self.set_kill_state(step);
-        log_message(format!("Thread ID: {}, sending kill upstream", &self.id), Level::Debug);
-        match self.state_change_messenger.send(ThreadStateSpace::KILLED) {
-            Err(error) => panic!("Critical error, cannot reach management thread!"),
-            Ok(_) => log_message(format!("Thread ID: {}, sent kill upstream", &self.id), Level::Debug)
-        }
-    }
-    fn set_pause_state<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
+    fn set_pause_state<I: Sharable, O: Sharable>(&mut self, step: &mut Box<dyn PipelineStep<I, O>>) {
         self.state = ThreadStateSpace::PAUSED;
         step.pause_behavior();
         log_message(format!("ThreadID: {} state set paused", &self.id), Level::Info);
     }
-    fn set_pause_state_upstream<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
-        self.set_pause_state(step);
-        log_message(format!("Thread ID: {}, sending pause upstream", &self.id), Level::Debug);
-        match self.state_change_messenger.send(ThreadStateSpace::PAUSED) {
-            Err(error) => panic!("Critical error, cannot reach management thread!"),
-            Ok(_) => log_message(format!("Thread ID: {}, sent pause upstream", &self.id), Level::Debug)
-        }
-    }
-    fn set_running_state<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
+    fn set_running_state<I: Sharable, O: Sharable>(&mut self, step: &mut Box<dyn PipelineStep<I, O>>) {
         self.state = ThreadStateSpace::RUNNING;
         step.start_behavior();
         log_message(format!("ThreadID: {} state set running", &self.id), Level::Info);
     }
-    fn kill_request_handler<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
+    fn kill_request_handler<I: Sharable, O: Sharable>(&mut self, step: &mut Box<dyn PipelineStep<I, O>>) {
         if self.state != ThreadStateSpace::KILLED {
             self.set_kill_state(step);
             log_message(format!("ThreadID: {} set kill state, exiting", &self.id), Level::Info);
         }
         else { sleep(Duration::from_millis(self.no_change_timer)) }
     }
-    fn pause_request_handler<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
+    fn pause_request_handler<I: Sharable, O: Sharable>(&mut self, step: &mut Box<dyn PipelineStep<I, O>>) {
         match self.state {
             ThreadStateSpace::PAUSED => sleep(Duration::from_millis(self.no_change_timer)),
             ThreadStateSpace::RUNNING => self.set_pause_state(step),
@@ -152,7 +118,7 @@ impl ThreadStateMachine {
             }
         }
     }
-    fn running_request_handler<I: Sharable, O: Sharable>(&mut self, step: &mut impl PipelineStep<I, O>) {
+    fn running_request_handler<I: Sharable, O: Sharable>(&mut self, step: &mut Box<dyn PipelineStep<I, O>>) {
         match self.state {
             ThreadStateSpace::RUNNING => (),
             ThreadStateSpace::PAUSED => self.set_running_state(step),
@@ -162,106 +128,87 @@ impl ThreadStateMachine {
             }
         }
     }
-    fn call<I: Sharable, O: Sharable>(&mut self, requested_state: ThreadStateSpace, previous_result: PipelineStepResult, node: &mut PipelineNode<I, O>, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
-        self.state_transition(requested_state, previous_result, step);
-
+    fn call<I: Sharable, O: Sharable>(&mut self, node: &mut PipelineNode<I, O>, step: &mut Box<dyn PipelineStep<I, O>>) -> Result<PipelineStepResult, ()> {
         let result = match self.state {
             ThreadStateSpace::RUNNING => {
                 log_message(format!("ThreadID: {} call start", &self.id), Level::Debug);
                 let res = node.call(step);
+                self.evaluate_step_result(&res, step);
                 log_message(format!("ThreadID: {} call done", &self.id), Level::Debug);
-                res
+                Ok(res)
             },
-            _ => PipelineStepResult::Carryover
+            _ => Err(())
         };
         result
     }
-}
-
-
-pub struct PipelineThread {
-    pub requested_state: Arc<AtomicU8>,
-    pub execution_time: Arc<AtomicU64>,
-    pipeline_step_thread: Option<JoinHandle<()>>,
-    pub return_code: Arc<RwLock<PipelineStepResult>>,
-    state_sender: Option<mpsc::Sender<ThreadStateSpace>>,
-    pub id: String
-}
-
-impl PipelineThread {
-    pub fn new<I: Sharable, O: Sharable>
-    (step: impl PipelineStep<I, O> + 'static, node: PipelineNode<I, O>, parameters: PipelineParameters, state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>)) -> PipelineThread { // requires node to be borrowed as static?
-        let execution_time = Arc::new(AtomicU64::new(0));
-
-        let mut thread = PipelineThread {
-            execution_time,
-            pipeline_step_thread: None,
-            return_code: Arc::new(RwLock::new(PipelineStepResult::Success)),
-            id: String::from("NoID"),
-            requested_state: state.0, // all threads start as paused initially
-            state_sender: Some(state.1)
-        };
-        
-        thread.instantiate_thread(step, node, parameters);
-        
-        return thread;
-    }
-
-    fn instantiate_thread<I: Sharable, O: Sharable>
-    (&mut self, mut step: impl PipelineStep<I, O> + 'static, mut node: PipelineNode<I, O>, parameters: PipelineParameters) {
-        let execution_clone = self.execution_time.clone();
-        let return_code_clone = self.return_code.clone();
-        let state_receiver = self.requested_state.clone();
-        let state_sender = self.state_sender.take();
-
-        let state_sender = match state_sender {
-            None => panic!("Cannot start step thread without attaching the managerial thread broadcaster"),
-            Some(sender) => sender
-        };
-
-        self.id = node.get_id();
-
-        self.pipeline_step_thread = Some(thread::spawn(move || { // refactor this so it isnt nonsense
-            let mut state_machine = ThreadStateMachine::new(&parameters, node.get_id(), state_sender);
-            let mut previous_result = PipelineStepResult::Carryover;
-            let kill_comp = ThreadStateSpace::KILLED;
-
-            while state_machine.state != kill_comp {
-                let requested_state: ThreadStateSpace = ThreadStateSpace::try_from(state_receiver.load(Ordering::Acquire)).unwrap();
-                log_message(format!("ThreadID: {} requested state {}, current state {}", node.get_id(), requested_state, state_machine.state), Level::Info);
-                let start_time = Instant::now();
-                previous_result = state_machine.call(requested_state, previous_result, &mut node, &mut step);
-
-                execution_clone.store(start_time.elapsed().as_micros() as u64, Ordering::Release);
-
-                if previous_result != PipelineStepResult::Carryover {
-                    let mut write_guard = return_code_clone.write().unwrap();
-                    *write_guard = previous_result.clone();
-                }
+    fn state_transition<I: Sharable, O: Sharable>(&mut self, requested_state: ThreadStateSpace, step: &mut Box<dyn PipelineStep<I, O>>) {
+        if requested_state == ThreadStateSpace::KILLED {
+            self.kill_request_handler(step);
+        }
+        else {
+            match requested_state {
+                ThreadStateSpace::PAUSED => self.pause_request_handler(step),
+                ThreadStateSpace::RUNNING => self.running_request_handler(step),
+                _ => ()
             }
-            log_message(format!("ThreadID: {} state machine end of action loop", node.get_id()), Level::Info); })
-        );
-    }
-    
-    pub fn join(self) {
-        match self.pipeline_step_thread {
-            None => panic!("pipeline thread already joined or was never created"),
-            Some(handle) => {
-                handle.join().unwrap();
-                log_message(format!("PipelineThread: Joined pipeline thread {}", self.id), Level::Info);
-            },
         }
     }
+    
+    fn get_current_state(&self) -> ThreadStateSpace {
+        self.state.clone()
+    }
 }
 
 
-pub trait CollectibleThread {
+pub struct PipelineThread<I: Sharable, O: Sharable> {
+    pub execution_time: u64,
+    pub return_code: PipelineStepResult,
+    pub id: String,
+    
+    thread_state_machine: ThreadStateMachine,
+    
+    step: Box<dyn PipelineStep<I, O>>,
+    node: PipelineNode<I, O>
+}
+
+impl<I: Sharable, O: Sharable> PipelineThread<I, O> {
+    pub fn new
+    (step: impl PipelineStep<I, O> + 'static, node: PipelineNode<I, O>, parameters: PipelineParameters) -> PipelineThread<I, O> { // requires node to be borrowed as static?
+        let id = node.get_id();
+        let mut thread = PipelineThread {
+            execution_time: 0,
+            return_code: PipelineStepResult::Success,
+            id: node.get_id(),
+            node,
+            step: Box::new(step),
+            thread_state_machine: ThreadStateMachine::new(&parameters, id)
+        };
+        
+        thread
+    }
+    
+    pub fn request_state_change(&mut self, requested_state: ThreadStateSpace) {
+        self.thread_state_machine.state_transition(requested_state, &mut self.step);
+    }
+}
+
+
+pub trait CollectibleThread: Send {
     fn call_thread(&mut self);
 }
 
 
 impl<I: Sharable, O: Sharable> CollectibleThread for PipelineThread<I, O> {
     fn call_thread(&mut self) {
-        
+        if self.thread_state_machine.state != ThreadStateSpace::KILLED {
+            log_message(format!("ThreadID: {} requested state {}, current state {}", self.id, self.thread_state_machine.get_current_state(), self.thread_state_machine.state), Level::Trace);
+            let start_time = Instant::now();
+
+            let last_return_code = self.return_code.clone();
+            self.return_code = self.thread_state_machine.call(&mut self.node, &mut self.step).unwrap_or(last_return_code);
+
+            self.execution_time = start_time.elapsed().as_micros() as u64;
+        }
+        log_message(format!("ThreadID: {} state machine end of action loop", self.id), Level::Trace);
     }
 }

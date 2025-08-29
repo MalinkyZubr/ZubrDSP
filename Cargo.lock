@@ -27,6 +27,7 @@ dependencies = [
  "rand 0.9.1",
  "ratatui",
  "rayon",
+ "rayon-core",
  "rodio",
  "rusb",
  "rustfft",

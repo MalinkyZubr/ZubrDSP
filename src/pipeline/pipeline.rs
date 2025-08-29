@@ -159,23 +159,6 @@ impl ConstructingPipeline {
 }
 
 
-pub struct ThreadDiagnostic {
-    pub thread_state: ThreadStateSpace,
-    pub return_code: PipelineStepResult,
-    pub execution_time: u64,
-    pub id: String
-}
-impl ThreadDiagnostic {
-    pub fn new(thread: &PipelineThread) -> Self {
-        Self {
-            thread_state: ThreadStateSpace::try_from(thread.requested_state.load(Ordering::Acquire)).unwrap(),
-            return_code: thread.return_code.read().unwrap().clone(),
-            execution_time: thread.execution_time.load(Ordering::Acquire),
-            id: thread.id.clone()
-        }
-    }
-}
-
 pub struct ActivePipeline {
     nodes: Vec<PipelineThread>,
     parameters: PipelineParameters,
