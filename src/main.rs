@@ -11,7 +11,7 @@ mod ddp;
 mod dsp;
 mod general;
 mod tests;
-mod frontend;
+//mod frontend;
 
 use color_eyre::Result;
 use ratatui::{

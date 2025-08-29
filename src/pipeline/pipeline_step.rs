@@ -64,10 +64,6 @@ impl<T: Sharable> PipelineStep<T, T> for DummyStep {
     }
 }
 
-pub trait CallableNode<I: Sharable, O: Sharable> : Send {
-    fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult;
-}
-
 
 pub struct PipelineNode<I: Sharable, O: Sharable> {
     pub input: NodeReceiver<I>,
@@ -87,8 +83,17 @@ impl<I: Sharable, O: Sharable> HasID for PipelineNode<I, O> {
 }
 
 
-impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> { // have separate builder structs for special components like branching and multiplexing to reduce complexity.
-    fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
+impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
+    pub fn new() -> PipelineNode<I, O> {
+        PipelineNode {
+            input: NodeReceiver::Dummy,
+            output: NodeSender::Dummy,
+            id: "".to_string(),
+            tap: None
+        }
+    }
+
+    pub fn call(&mut self, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
         let received_result = self.input.receive();
         match received_result {
             Err(err) => {
@@ -99,18 +104,6 @@ impl<I: Sharable, O: Sharable> CallableNode<I, O> for PipelineNode<I, O> { // ha
                 let result = self.route_computation(val, step);
                 result
             }
-        }
-    }
-}
-
-
-impl<I: Sharable, O: Sharable> PipelineNode<I, O> {
-    pub fn new() -> PipelineNode<I, O> {
-        PipelineNode {
-            input: NodeReceiver::Dummy,
-            output: NodeSender::Dummy,
-            id: "".to_string(),
-            tap: None
         }
     }
 

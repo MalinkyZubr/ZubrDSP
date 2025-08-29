@@ -13,7 +13,7 @@ use std::sync::mpmc::RecvTimeoutError;
 use std::time::Instant;
 use crossbeam_queue::SegQueue;
 use super::api::*;
-use crate::frontend::curses::app::{App, AppBuilder};
+//use crate::frontend::curses::app::{App, AppBuilder};
 
 
 pub type ConstructionQueue = Arc<SegQueue<PipelineThread>>;

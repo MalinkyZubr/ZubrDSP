@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 use strum::Display;
-use super::pipeline_step::{PipelineStep, PipelineNode, CallableNode, PipelineStepResult};
+use super::pipeline_step::{PipelineStep, PipelineNode, PipelineStepResult};
 use super::pipeline_traits::{HasID, Sharable};
 use super::api::*;
 
@@ -162,7 +162,7 @@ impl ThreadStateMachine {
             }
         }
     }
-    fn call<I: Sharable, O: Sharable>(&mut self, requested_state: ThreadStateSpace, previous_result: PipelineStepResult, node: &mut impl CallableNode<I, O>, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
+    fn call<I: Sharable, O: Sharable>(&mut self, requested_state: ThreadStateSpace, previous_result: PipelineStepResult, node: &mut PipelineNode<I, O>, step: &mut impl PipelineStep<I, O>) -> PipelineStepResult {
         self.state_transition(requested_state, previous_result, step);
 
         let result = match self.state {
@@ -190,7 +190,7 @@ pub struct PipelineThread {
 
 impl PipelineThread {
     pub fn new<I: Sharable, O: Sharable>
-    (step: impl PipelineStep<I, O> + 'static, node: impl CallableNode<I, O> + 'static + HasID, parameters: PipelineParameters, state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>)) -> PipelineThread { // requires node to be borrowed as static?
+    (step: impl PipelineStep<I, O> + 'static, node: PipelineNode<I, O>, parameters: PipelineParameters, state: (Arc<AtomicU8>, mpsc::Sender<ThreadStateSpace>)) -> PipelineThread { // requires node to be borrowed as static?
         let execution_time = Arc::new(AtomicU64::new(0));
 
         let mut thread = PipelineThread {
@@ -208,7 +208,7 @@ impl PipelineThread {
     }
 
     fn instantiate_thread<I: Sharable, O: Sharable>
-    (&mut self, mut step: impl PipelineStep<I, O> + 'static, mut node: impl CallableNode<I, O> + 'static + HasID, parameters: PipelineParameters) {
+    (&mut self, mut step: impl PipelineStep<I, O> + 'static, mut node: PipelineNode<I, O>, parameters: PipelineParameters) {
         let execution_clone = self.execution_time.clone();
         let return_code_clone = self.return_code.clone();
         let state_receiver = self.requested_state.clone();
@@ -251,5 +251,17 @@ impl PipelineThread {
                 log_message(format!("PipelineThread: Joined pipeline thread {}", self.id), Level::Info);
             },
         }
+    }
+}
+
+
+pub trait CollectibleThread {
+    fn call_thread(&mut self);
+}
+
+
+impl<I: Sharable, O: Sharable> CollectibleThread for PipelineThread<I, O> {
+    fn call_thread(&mut self) {
+        
     }
 }
